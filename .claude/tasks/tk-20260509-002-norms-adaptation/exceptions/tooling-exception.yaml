@@ -1,0 +1,12 @@
+exception_id: exc-20260509-001
+class: tooling_exception
+deviation: "skill-tool-mapping 要求安装 anything-notebooklm 外部 Skill，但官方插件市场中未找到该插件"
+reason: "在 claude-plugins-official 市场中搜索 'anything-notebooklm'、'notebooklm'、'notebook' 均无匹配项。该 Skill 可能尚未发布或名称已变更。"
+approved_by: user
+status: approved
+compensating_controls:
+  - "frontend-design 和 superpowers 已成功安装并启用"
+  - "anything-notebooklm 的 fallback：主线程直接生成 Markdown 大纲（见 skill-tool-mapping.md §4.6）"
+  - "若后续该 Skill 上线，执行 `claude plugin install anything-notebooklm` 补装"
+evidence_refs:
+  - ".claude/tasks/tk-20260509-002/artifacts/route-projection.yaml"

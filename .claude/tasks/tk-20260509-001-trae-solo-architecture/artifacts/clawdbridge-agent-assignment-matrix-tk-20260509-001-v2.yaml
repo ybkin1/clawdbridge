@@ -1,0 +1,745 @@
+# agent-assignment-matrix.yaml — ClawdBridge Mobile L4 实现层 Agent 分配矩阵
+# 规范: lego-assembly-workflow.md §4.6.2, work-packet-governance.md §6
+# 日期: 2026-05-09 | 版本: v2 (52 L4 packets)
+
+packets:
+
+  # ── Bridge Server: 通信层 (BC1) ──
+  - packet_id: "BP01"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §7.1 WSHub / decomp-tree BC1/BU1a"
+    objective: "创建 WebSocket 服务器，监听端口"
+    timeout_minutes: 25
+    read_scope: ["Design §5.4 WS 端点", "§3.1 连接状态机"]
+    write_scope: ["bridge-server/src/ws-server.ts"]
+    dependencies: []
+    acceptance: ["Server 启动并监听指定端口"]
+    verification: ["node bridge-server/test/ws-server.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP02"
+    packet_kind: wiring
+    lego_level: L4
+    architecture_node_ref: "design §7.1 WSHub / decomp-tree BC1/BU1a"
+    objective: "WebSocket 连接时 JWT 鉴权中间件"
+    timeout_minutes: 15
+    read_scope: ["Design §9.1 认证架构"]
+    write_scope: ["bridge-server/src/auth-middleware.ts"]
+    dependencies: ["BP01", "BP14"]
+    acceptance: ["无效 token → 401", "有效 token → 放行"]
+    verification: ["node bridge-server/test/auth-middleware.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP03"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §7.1 WSHub / decomp-tree BC1/BU1a"
+    objective: "消息 type→handler 路由分发，10 种消息类型"
+    timeout_minutes: 30
+    read_scope: ["Design §5.5 消息类型完整规格"]
+    write_scope: ["bridge-server/src/message-router.ts"]
+    dependencies: ["BP01"]
+    acceptance: ["10 种消息 type 正确路由到对应 handler"]
+    verification: ["node bridge-server/test/message-router.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP04"
+    packet_kind: operability
+    lego_level: L4
+    architecture_node_ref: "design §7.1 WSHub / decomp-tree BC1/BU1a"
+    objective: "30s 心跳 ping/pong，超时断开并清理会话"
+    timeout_minutes: 10
+    read_scope: ["Design §5.5 ping/pong 消息"]
+    write_scope: ["bridge-server/src/heartbeat.ts"]
+    dependencies: ["BP01"]
+    acceptance: ["30s 无 pong → 断开连接", "session 清理"]
+    verification: ["manual: wscat 连接 → 断网 → 30s 后断开"]
+    rollback: "git revert <commit>"
+
+  # ── Bridge Server: Claude 驱动层 (BC3) ──
+  - packet_id: "BP05"
+    packet_kind: wiring
+    lego_level: L4
+    architecture_node_ref: "design §7.2 CLIDriver / decomp-tree BC3/BU3a"
+    objective: "spawn Claude Code 子进程，设置 cwd + env"
+    timeout_minutes: 15
+    read_scope: ["Design §7.2 CLIDriver 伪代码"]
+    write_scope: ["bridge-server/src/cli-spawn.ts"]
+    dependencies: ["BP01"]
+    acceptance: ["spawn('claude', ['--terminal']) 返回 ChildProcess"]
+    verification: ["node bridge-server/test/cli-spawn.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP06"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §7.2 CLIDriver / decomp-tree BC3/BU3a"
+    objective: "手机消息写入 Claude stdin"
+    timeout_minutes: 10
+    read_scope: ["Design §3.2 消息生命周期"]
+    write_scope: ["bridge-server/src/stdin-writer.ts"]
+    dependencies: ["BP05"]
+    acceptance: ["写入 stdin → Claude stdout 产出"]
+    verification: ["node bridge-server/test/stdin-writer.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP07"
+    packet_kind: logic-1
+    lego_level: L4
+    architecture_node_ref: "design §7.2 CLIDriver / decomp-tree BC3/BU3a"
+    objective: "逐行解析 Claude stdout → JSON 消息对象（text/tool_use/permission_request）"
+    timeout_minutes: 25
+    read_scope: ["Design §7.2 伪代码", "§5.5 消息类型"]
+    write_scope: ["bridge-server/src/stdout-parser.ts"]
+    dependencies: ["BP05"]
+    acceptance: ["逐行 JSON.parse → 按 type 路由", "截断行缓存拼接"]
+    verification: ["node bridge-server/test/stdout-parser.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP08"
+    packet_kind: operability
+    lego_level: L4
+    architecture_node_ref: "design §7.2 CLIDriver / decomp-tree BC3/BU3a"
+    objective: "stderr 写入日志文件 + 错误事件触发"
+    timeout_minutes: 10
+    read_scope: ["Design §9.1 日志分级"]
+    write_scope: ["bridge-server/src/stderr-logger.ts"]
+    dependencies: ["BP05"]
+    acceptance: ["stderr 输出 → 日志文件", "ERROR 级 → 触发 alert"]
+    verification: ["manual: Claude 输出错误 → 日志文件中可见"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP09"
+    packet_kind: operability
+    lego_level: L4
+    architecture_node_ref: "design §7.2 CLIDriver / decomp-tree BC3/BU3a"
+    objective: "进程 exit≠0 → 通知手机 + 清理进程表"
+    timeout_minutes: 10
+    read_scope: ["Design §8.1 进程崩溃恢复"]
+    write_scope: ["bridge-server/src/exit-handler.ts"]
+    dependencies: ["BP05"]
+    acceptance: ["exit code≠0 → 广播 BridgeError", "进程表清理"]
+    verification: ["node bridge-server/test/exit-handler.test.ts"]
+    rollback: "git revert <commit>"
+
+  # ── Bridge Server: 审批引擎 (BC3) ──
+  - packet_id: "BP10"
+    packet_kind: logic-1
+    lego_level: L4
+    architecture_node_ref: "design §7.3 ApprovalEngine / decomp-tree BC3/BU3b"
+    objective: "拦截 permission_request → 白名单检查 → 生成 approval_request 推送手机"
+    timeout_minutes: 15
+    read_scope: ["Design §7.3 伪代码", "§3.3 审批状态机"]
+    write_scope: ["bridge-server/src/approval-interceptor.ts"]
+    dependencies: ["BP01"]
+    acceptance: ["白名单命中 → 跳过推送", "未命中 → 推 approval_request"]
+    verification: ["node bridge-server/test/approval-interceptor.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP11"
+    packet_kind: logic-2
+    lego_level: L4
+    architecture_node_ref: "design §7.3 ApprovalEngine / decomp-tree BC3/BU3b"
+    objective: "Promise + 60s timeout，等待手机审批决定"
+    timeout_minutes: 15
+    read_scope: ["Design §8.1 审批超时降级"]
+    write_scope: ["bridge-server/src/approval-waiter.ts"]
+    dependencies: ["BP10"]
+    acceptance: ["60s 内收到响应 → resolve", "超时 → auto_rejected"]
+    verification: ["node bridge-server/test/approval-waiter.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP12"
+    packet_kind: logic-3
+    lego_level: L4
+    architecture_node_ref: "design §7.3 ApprovalEngine / decomp-tree BC3/BU3b"
+    objective: "会话级白名单：'本会话始终允许' 缓存"
+    timeout_minutes: 10
+    read_scope: ["Design §7.3 伪代码"]
+    write_scope: ["bridge-server/src/approval-whitelist.ts"]
+    dependencies: ["BP10"]
+    acceptance: ["add → 后续同操作跳过", "session 结束 → 清空"]
+    verification: ["node bridge-server/test/approval-whitelist.test.ts"]
+    rollback: "git revert <commit>"
+
+  # ── Bridge Server: 认证 (BC2) ──
+  - packet_id: "BP13"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §7.1 AuthService / decomp-tree BC2/BU2a"
+    objective: "GitHub OAuth 2.0 登录流程"
+    timeout_minutes: 25
+    read_scope: ["Design §5.1 认证 API"]
+    write_scope: ["bridge-server/src/oauth-handler.ts"]
+    dependencies: ["BP01"]
+    acceptance: ["/auth/oauth → 返回 JWT", "OAuth callback 正确处理"]
+    verification: ["node bridge-server/test/oauth-handler.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP14"
+    packet_kind: service
+    lego_level: L4
+    architecture_node_ref: "design §7.1 AuthService / decomp-tree BC2/BU2a"
+    objective: "HS256 JWT 签发 (access_token + refresh_token)"
+    timeout_minutes: 10
+    read_scope: ["Design §9.1 认证架构"]
+    write_scope: ["bridge-server/src/jwt-issuer.ts"]
+    dependencies: []
+    acceptance: ["sign → verify 通过", "secret 来自 env"]
+    verification: ["node bridge-server/test/jwt-issuer.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP15"
+    packet_kind: wiring
+    lego_level: L4
+    architecture_node_ref: "design §7.1 AuthService / decomp-tree BC2/BU2a"
+    objective: "Express 中间件：验证 Authorization: Bearer <token>"
+    timeout_minutes: 10
+    read_scope: ["Design §9.2 安全原则", "§7.1 jwtVerifier 中间件签名"]
+    write_scope: ["bridge-server/src/jwt-verifier.ts"]
+    dependencies: ["BP14"]
+    acceptance: ["无 token → 401", "过期 token → 401", "有效 → req.user"]
+    verification: ["node bridge-server/test/jwt-verifier.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP16"
+    packet_kind: service
+    lego_level: L4
+    architecture_node_ref: "design §7.1 AuthService / decomp-tree BC2/BU2a"
+    objective: "/auth/refresh 端点：refreshToken 有效 → 新 pair"
+    timeout_minutes: 10
+    read_scope: ["Design §5.1 认证 API"]
+    write_scope: ["bridge-server/src/token-refresher.ts"]
+    dependencies: ["BP14"]
+    acceptance: ["有效 refreshToken → 新 access+refresh", "无效 → 401"]
+    verification: ["node bridge-server/test/token-refresher.test.ts"]
+    rollback: "git revert <commit>"
+
+  # ── Bridge Server: REST API (BC1/BC4) ──
+  - packet_id: "BP17"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §7.1 REST API / decomp-tree BC1/BU1b + BC4/BU4a"
+    objective: "GET/POST/DELETE /api/devices 端点"
+    timeout_minutes: 25
+    read_scope: ["Design §5.2 设备 API"]
+    write_scope: ["bridge-server/src/routes/devices.ts"]
+    dependencies: ["BP01", "BP15"]
+    acceptance: ["CRUD 设备列表正确"]
+    verification: ["node bridge-server/test/routes/devices.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "BP18"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §7.1 REST API / decomp-tree BC1/BU1b"
+    objective: "GET/POST /api/sessions + GET /api/sessions/:id/messages 端点"
+    timeout_minutes: 25
+    read_scope: ["Design §5.3 会话 API"]
+    write_scope: ["bridge-server/src/routes/sessions.ts"]
+    dependencies: ["BP01", "BP15"]
+    acceptance: ["会话 CRUD 正确", "消息分页正确"]
+    verification: ["node bridge-server/test/routes/sessions.test.ts"]
+    rollback: "git revert <commit>"
+
+  # ── Mobile: 基础设施 (MC4/MC5) ──
+  - packet_id: "MP01"
+    packet_kind: wiring
+    lego_level: L4
+    architecture_node_ref: "design §6.2 技术选型 / decomp-tree MC5/MU5a"
+    objective: "创建 Expo + TypeScript 项目脚手架 + 目录结构"
+    timeout_minutes: 25
+    read_scope: ["Design §2 组件树", "§6.2 技术选型", "§6.3 deps 清单"]
+    write_scope: ["mobile/ 全目录"]
+    dependencies: []
+    acceptance: ["npx expo start 成功"]
+    verification: ["cd mobile && npx expo start"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP02"
+    packet_kind: wiring
+    lego_level: L4
+    architecture_node_ref: "design §2 组件树 / decomp-tree MC1"
+    objective: "React Navigation Tab (对话/任务/我的) + AuthStack"
+    timeout_minutes: 15
+    read_scope: ["Design §2 组件树", "§7.1 页面导航", "§2.1 Navigation 配置"]
+    write_scope: ["mobile/src/navigation/"]
+    dependencies: ["MP01"]
+    acceptance: ["Tab 三页可切换", "未登录 → AuthStack"]
+    verification: ["manual: Tab 切换 OK"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP03"
+    packet_kind: wiring
+    lego_level: L4
+    architecture_node_ref: "design §4 Zustand Store / decomp-tree MC4"
+    objective: "Zustand store 基础模板 (create + TypeScript)"
+    timeout_minutes: 10
+    read_scope: ["Design §4 Zustand Store"]
+    write_scope: ["mobile/src/stores/"]
+    dependencies: ["MP01"]
+    acceptance: ["create 返回可用的 store"]
+    verification: ["jest 基础 store 测试"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP04"
+    packet_kind: wiring
+    lego_level: L4
+    architecture_node_ref: "design §6.1 SQLite 表结构 / decomp-tree MC5/MU5a"
+    objective: "SQLite 打开 + 5 张表 CREATE + WAL 模式"
+    timeout_minutes: 25
+    read_scope: ["Design §6.1 DDL"]
+    write_scope: ["mobile/src/db/database.ts"]
+    dependencies: ["MP01"]
+    acceptance: ["5 张表创建成功", "WAL 模式启用"]
+    verification: ["npx jest mobile/test/db/database.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP05"
+    packet_kind: dao
+    lego_level: L4
+    architecture_node_ref: "design §6.1 sessions 表 / decomp-tree MC5/MU5a"
+    objective: "sessions 表 DAO：CRUD + archive"
+    timeout_minutes: 15
+    read_scope: ["Design §6.1 sessions DDL", "§6.1.1 SessionDAO 方法签名"]
+    write_scope: ["mobile/src/db/session-dao.ts"]
+    dependencies: ["MP04"]
+    acceptance: ["CRUD 通过"]
+    verification: ["npx jest mobile/test/db/session-dao.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP06"
+    packet_kind: dao
+    lego_level: L4
+    architecture_node_ref: "design §6.1 messages 表 / decomp-tree MC5/MU5a"
+    objective: "messages 表 DAO：CRUD + seq 去重 + BEFORE 分页游标"
+    timeout_minutes: 25
+    read_scope: ["Design §6.1 messages DDL", "§8.2 去重机制", "§6.1.1 MessageDAO 方法签名"]
+    write_scope: ["mobile/src/db/message-dao.ts"]
+    dependencies: ["MP04"]
+    acceptance: ["写入/分页读取/seq 去重正确"]
+    verification: ["npx jest mobile/test/db/message-dao.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP07"
+    packet_kind: dao
+    lego_level: L4
+    architecture_node_ref: "design §6.1 approvals 表 / decomp-tree MC5/MU5a"
+    objective: "approvals 表 DAO：写入 + 按会话查询"
+    timeout_minutes: 10
+    read_scope: ["Design §6.1 approvals DDL", "§6.1.1 ApprovalDAO 方法签名"]
+    write_scope: ["mobile/src/db/approval-dao.ts"]
+    dependencies: ["MP04"]
+    acceptance: ["写入/查询正确"]
+    verification: ["npx jest mobile/test/db/approval-dao.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP08"
+    packet_kind: dao
+    lego_level: L4
+    architecture_node_ref: "design §6.1 kv_store 表 / decomp-tree MC5/MU5a"
+    objective: "kv_store 表 DAO：Token 持久化存取"
+    timeout_minutes: 10
+    read_scope: ["Design §9.1 认证架构", "§6.1.1 KVStoreDAO 方法签名"]
+    write_scope: ["mobile/src/db/kv-store-dao.ts"]
+    dependencies: ["MP04"]
+    acceptance: ["Token 存取正确"]
+    verification: ["npx jest mobile/test/db/kv-store-dao.test.ts"]
+    rollback: "git revert <commit>"
+
+  # ── Mobile: 通信 (MC4) ──
+  - packet_id: "MP09"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §5.4 WS 端点 / decomp-tree MC4/MU4a"
+    objective: "WebSocket 连接：connect + client_connect 握手 + 指数退避重连"
+    timeout_minutes: 25
+    read_scope: ["Design §3.1 连接状态机", "§8.1 断连恢复"]
+    write_scope: ["mobile/src/services/ws-connection.ts"]
+    dependencies: ["MP01"]
+    acceptance: ["connect 成功", "断线自动重连"]
+    verification: ["npx jest mobile/test/services/ws-connection.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP10"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §5.4 WS 端点 / decomp-tree MC4/MU4a"
+    objective: "send 消息 + local seq 自增 + ACK 处理"
+    timeout_minutes: 10
+    read_scope: ["Design §8.2 去重机制", "§5.7 WSSender API"]
+    write_scope: ["mobile/src/services/ws-sender.ts"]
+    dependencies: ["MP09"]
+    acceptance: ["send → Bridge 收到", "seq 自增"]
+    verification: ["npx jest mobile/test/services/ws-sender.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP11"
+    packet_kind: logic-1
+    lego_level: L4
+    architecture_node_ref: "design §5.5 消息协议 / decomp-tree MC4/MU4b"
+    objective: "接收消息 → JSON.parse → 按 type 调用 MessageRouter"
+    timeout_minutes: 15
+    read_scope: ["Design §5.5 消息类型", "§3.4 WSReceiver 接口"]
+    write_scope: ["mobile/src/services/ws-receiver.ts"]
+    dependencies: ["MP09"]
+    acceptance: ["接收 → parse → 分发到 router"]
+    verification: ["npx jest mobile/test/services/ws-receiver.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP12"
+    packet_kind: logic-2
+    lego_level: L4
+    architecture_node_ref: "design §5.5 消息协议 / decomp-tree MC4/MU4b"
+    objective: "MsgRouter: stream→ChatStore / approval→Handler / tool→Card"
+    timeout_minutes: 30
+    read_scope: ["Design §5.5 消息 type 映射", "§4.2 ChatStore", "§5.6 MsgRouter 路由表"]
+    write_scope: ["mobile/src/services/msg-router.ts"]
+    dependencies: ["MP11"]
+    acceptance: ["各 type 正确分发到对应 handler"]
+    verification: ["npx jest mobile/test/services/msg-router.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP13"
+    packet_kind: logic-3
+    lego_level: L4
+    architecture_node_ref: "design §8.2 去重机制 / decomp-tree MC4/MU4b"
+    objective: "seq 去重：对比 last_ack_seq → 跳过/处理/补发队列"
+    timeout_minutes: 15
+    read_scope: ["Design §8.2 去重机制"]
+    write_scope: ["mobile/src/services/seq-dedup.ts"]
+    dependencies: ["MP10", "MP11"]
+    acceptance: ["重复 seq 跳过", "跳号进入补发队列"]
+    verification: ["npx jest mobile/test/services/seq-dedup.test.ts"]
+    rollback: "git revert <commit>"
+
+  # ── Mobile: 认证与设备 (MC1) ──
+  - packet_id: "MP14"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §9.1 认证架构 / decomp-tree MC1/MU1c"
+    objective: "expo-secure-store 封装：存/取/删 JWT Token"
+    timeout_minutes: 10
+    read_scope: ["Design §9.1 Token 存储", "§9.4 SecureStore API"]
+    write_scope: ["mobile/src/services/secure-store.ts"]
+    dependencies: ["MP01"]
+    acceptance: ["Token 安全存取"]
+    verification: ["npx jest mobile/test/services/secure-store.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP15"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 AuthScreen / decomp-tree MC1/MU1a"
+    objective: "AuthScreen UI：登录/注册表单 + GitHub OAuth 按钮"
+    timeout_minutes: 25
+    read_scope: ["Design §2 组件树", "§5.1 认证 API"]
+    write_scope: ["mobile/src/screens/auth-screen.tsx"]
+    dependencies: ["MP01"]
+    acceptance: ["UI 渲染正确", "按钮触发 OAuth 跳转"]
+    verification: ["npx jest mobile/test/screens/auth-screen.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP16"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §9.1 OAuth 回调 / decomp-tree MC1/MU1a"
+    objective: "clawdbridge://auth?token= 深链处理 → 存储 JWT → 跳转主页"
+    timeout_minutes: 15
+    read_scope: ["Design §5.1 OAuth 回调"]
+    write_scope: ["mobile/src/hooks/use-oauth-deeplink.ts"]
+    dependencies: ["MP15", "MP14"]
+    acceptance: ["深链 → token → SecureStore → 主页"]
+    verification: ["npx jest mobile/test/hooks/use-oauth-deeplink.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP17"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 DeviceScreen / decomp-tree MC1/MU1b"
+    objective: "DeviceScreen UI：设备列表 + 在线/离线 + 配对/解绑"
+    timeout_minutes: 30
+    read_scope: ["Design §2 组件树", "§5.2 设备 API", "§7.2 设备管理页线框"]
+    write_scope: ["mobile/src/screens/device-screen.tsx"]
+    dependencies: ["MP01"]
+    acceptance: ["设备列表渲染", "在线/离线标识正确", "配对/解绑可用"]
+    verification: ["npx jest mobile/test/screens/device-screen.test.tsx"]
+    rollback: "git revert <commit>"
+
+  # ── Mobile: 对话核心 (MC2) ──
+  - packet_id: "MP18"
+    packet_kind: service
+    lego_level: L4
+    architecture_node_ref: "design §4.2 ChatStore / decomp-tree MC2/MU2a"
+    objective: "Zustand ChatStore：messages/send/stream/approval 状态管理"
+    timeout_minutes: 30
+    read_scope: ["Design §4.2 ChatStore 接口", "§3.2 消息生命周期"]
+    write_scope: ["mobile/src/stores/chat-store.ts"]
+    dependencies: ["MP03"]
+    acceptance: ["send 乐观更新", "stream 打字机效果", "approval 接收"]
+    verification: ["npx jest mobile/test/stores/chat-store.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP19"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 ChatScreen / decomp-tree MC2/MU2a"
+    objective: "MessageList：FlatList 虚拟化 + 5 种消息 type 渲染分发"
+    timeout_minutes: 30
+    read_scope: ["Design §2 组件树", "§7.2 对话详情线框"]
+    write_scope: ["mobile/src/screens/chat-screen.tsx"]
+    dependencies: ["MP18"]
+    acceptance: ["FlatList 渲染 1000 条 FPS≥55", "5 种 type 分发正确"]
+    verification: ["npx jest mobile/test/screens/chat-screen.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP20"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 ChatScreen / decomp-tree MC2/MU2a"
+    objective: "UserBubble 组件：右对齐蓝底"
+    timeout_minutes: 10
+    read_scope: ["Design §7.2 线框", "§7.3 主题色"]
+    write_scope: ["mobile/src/components/user-bubble.tsx"]
+    dependencies: ["MP19"]
+    acceptance: ["右对齐蓝色 render"]
+    verification: ["npx jest mobile/test/components/user-bubble.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP21"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 ChatScreen / decomp-tree MC2/MU2a"
+    objective: "AIBubble 组件：左对齐灰底 + 逐 token 打字机效果"
+    timeout_minutes: 15
+    read_scope: ["Design §3.2 消息生命周期", "§7.2 线框"]
+    write_scope: ["mobile/src/components/ai-bubble.tsx"]
+    dependencies: ["MP19"]
+    acceptance: ["打字机效果逐 token 显示"]
+    verification: ["npx jest mobile/test/components/ai-bubble.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP22"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 ChatScreen / decomp-tree MC2/MU2a"
+    objective: "CodeBlock 组件：prism-react-renderer 语法高亮"
+    timeout_minutes: 15
+    read_scope: ["Design §7.2 线框"]
+    write_scope: ["mobile/src/components/code-block.tsx"]
+    dependencies: ["MP19"]
+    acceptance: ["代码块语法高亮正确"]
+    verification: ["npx jest mobile/test/components/code-block.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP23"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 ChatScreen / decomp-tree MC2/MU2a"
+    objective: "ToolCallCard 组件：文件名/操作类型/执行状态"
+    timeout_minutes: 15
+    read_scope: ["Design §5.5 tool_invocation 消息", "§7.2 线框"]
+    write_scope: ["mobile/src/components/tool-call-card.tsx"]
+    dependencies: ["MP19"]
+    acceptance: ["文件路径/操作/状态展示正确"]
+    verification: ["npx jest mobile/test/components/tool-call-card.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP24"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 ChatScreen / decomp-tree MC2/MU2a"
+    objective: "ErrorCard 组件：红色高亮 + '让 AI 修复' 按钮"
+    timeout_minutes: 10
+    read_scope: ["Design §5.2 执行反馈"]
+    write_scope: ["mobile/src/components/error-card.tsx"]
+    dependencies: ["MP19"]
+    acceptance: ["错误红色高亮", "修复按钮发送消息"]
+    verification: ["npx jest mobile/test/components/error-card.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP25"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 ChatScreen / decomp-tree MC2/MU2c"
+    objective: "InputBar 组件：TextInput + Markdown 快捷 + send 按钮"
+    timeout_minutes: 25
+    read_scope: ["Design §7.2 线框"]
+    write_scope: ["mobile/src/components/input-bar.tsx"]
+    dependencies: ["MP18"]
+    acceptance: ["文本输入正确", "发送按钮 → ChatStore.send"]
+    verification: ["npx jest mobile/test/components/input-bar.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP26"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 ChatScreen / decomp-tree MC2/MU2c"
+    objective: "VoiceButton 组件：按住说话 → ASR → 填入输入框"
+    timeout_minutes: 15
+    read_scope: ["Design §4.3 输入方式"]
+    write_scope: ["mobile/src/components/voice-button.tsx"]
+    dependencies: ["MP25"]
+    acceptance: ["按住 → 录音 → 识别 → 填入"]
+    verification: ["npx jest mobile/test/components/voice-button.test.tsx"]
+    rollback: "git revert <commit>"
+
+  # ── Mobile: 审批 (MC2) ──
+  - packet_id: "MP27"
+    packet_kind: service
+    lego_level: L4
+    architecture_node_ref: "design §3.3 审批状态机 / decomp-tree MC2/MU2b"
+    objective: "useApprovalHandler hook：接收 request / 超时 / 发送 response"
+    timeout_minutes: 15
+    read_scope: ["Design §3.3 审批状态机", "§5.5 approval 消息", "§3.4 UseApprovalHandlerReturn 接口"]
+    write_scope: ["mobile/src/hooks/use-approval-handler.ts"]
+    dependencies: ["MP18"]
+    acceptance: ["状态流转正确", "超时自动消失"]
+    verification: ["npx jest mobile/test/hooks/use-approval-handler.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP28"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 ApprovalCard / decomp-tree MC2/MU2b"
+    objective: "ApprovalCard 组件 UI：操作类型/目标路径/风险 + 允许/拒绝按钮"
+    timeout_minutes: 25
+    read_scope: ["Design §7.2 线框", "§7.3 主题色"]
+    write_scope: ["mobile/src/components/approval-card.tsx"]
+    dependencies: ["MP27"]
+    acceptance: ["卡片渲染正确", "按钮可点击"]
+    verification: ["npx jest mobile/test/components/approval-card.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP29"
+    packet_kind: logic-1
+    lego_level: L4
+    architecture_node_ref: "design §3.3 审批状态机 / decomp-tree MC2/MU2b"
+    objective: "'本会话始终允许' scope=session 勾选逻辑"
+    timeout_minutes: 10
+    read_scope: ["Design §F-06.4", "§3.4 UseSessionScopeReturn 接口"]
+    write_scope: ["mobile/src/hooks/use-approval-session-scope.ts"]
+    dependencies: ["MP27"]
+    acceptance: ["勾选 → scope=session → 后续跳过"]
+    verification: ["npx jest mobile/test/hooks/use-approval-session-scope.test.ts"]
+    rollback: "git revert <commit>"
+
+  # ── Mobile: 会话管理 (MC3) ──
+  - packet_id: "MP30"
+    packet_kind: service
+    lego_level: L4
+    architecture_node_ref: "design §4.1 SessionStore / decomp-tree MC3/MU3a"
+    objective: "Zustand SessionStore：会话列表/搜索/未读/在线"
+    timeout_minutes: 25
+    read_scope: ["Design §4.1 SessionStore 接口"]
+    write_scope: ["mobile/src/stores/session-store.ts"]
+    dependencies: ["MP03"]
+    acceptance: ["列表/搜索/未读/在线 正确"]
+    verification: ["npx jest mobile/test/stores/session-store.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP31"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 SessionListScreen / decomp-tree MC3/MU3a"
+    objective: "SessionListScreen UI：时间降序 + 在线灯 + 未读角标"
+    timeout_minutes: 25
+    read_scope: ["Design §7.2 对话列表线框"]
+    write_scope: ["mobile/src/screens/session-list-screen.tsx"]
+    dependencies: ["MP30"]
+    acceptance: ["时间降序排列", "在线/离线标识正确", "未读角标"]
+    verification: ["npx jest mobile/test/screens/session-list-screen.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP32"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 SessionListScreen / decomp-tree MC3/MU3a"
+    objective: "SessionCard 组件：标题/摘要/设备名/时间"
+    timeout_minutes: 15
+    read_scope: ["Design §7.2 线框"]
+    write_scope: ["mobile/src/components/session-card.tsx"]
+    dependencies: ["MP31"]
+    acceptance: ["卡片信息展示正确"]
+    verification: ["npx jest mobile/test/components/session-card.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP33"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 SessionListScreen / decomp-tree MC3/MU3a"
+    objective: "SessionSearch 组件：关键词过滤"
+    timeout_minutes: 10
+    read_scope: ["Design §F-08.5", "§2.2 SessionSearch 组件"]
+    write_scope: ["mobile/src/components/session-search.tsx"]
+    dependencies: ["MP30"]
+    acceptance: ["搜索过滤正确"]
+    verification: ["npx jest mobile/test/components/session-search.test.tsx"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "MP34"
+    packet_kind: controller
+    lego_level: L4
+    architecture_node_ref: "design §2 TaskDashboard / decomp-tree MC3/MU3b"
+    objective: "TaskDashboardScreen UI：按项目分组 + 状态卡片"
+    timeout_minutes: 25
+    read_scope: ["Design §2 组件树"]
+    write_scope: ["mobile/src/screens/task-dashboard-screen.tsx"]
+    dependencies: ["MP30"]
+    acceptance: ["分组正确", "状态卡片渲染"]
+    verification: ["npx jest mobile/test/screens/task-dashboard-screen.test.tsx"]
+    rollback: "git revert <commit>"
+
+  # ── 集成联调 (INT) ──
+  - packet_id: "IP01"
+    packet_kind: verification
+    lego_level: L3
+    architecture_node_ref: "design §8.1 失败路径 / decomp-tree INT/IC1"
+    objective: "E2E 消息流：手机发→Bridge→Claude→响应流回"
+    timeout_minutes: 30
+    read_scope: ["Design §3.2 消息生命周期"]
+    write_scope: ["bridge-server/test/e2e/full-flow.test.ts"]
+    dependencies: ["BP01", "BP02", "BP03", "BP05", "BP06", "BP07", "BP17", "BP18", "MP09", "MP10", "MP11", "MP12", "MP18", "MP19"]
+    acceptance: ["消息全链路通过"]
+    verification: ["node bridge-server/test/e2e/full-flow.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "IP02"
+    packet_kind: verification
+    lego_level: L3
+    architecture_node_ref: "design §8.1 审批超时 / decomp-tree INT/IC2"
+    objective: "E2E 审批流：允许/拒绝/超时三路径"
+    timeout_minutes: 25
+    read_scope: ["Design §3.3 审批状态机", "§8.1 审批超时"]
+    write_scope: ["bridge-server/test/e2e/approval-flow.test.ts"]
+    dependencies: ["BP10", "BP11", "BP12", "MP27", "MP28"]
+    acceptance: ["三路径全通过"]
+    verification: ["node bridge-server/test/e2e/approval-flow.test.ts"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "IP03"
+    packet_kind: verification
+    lego_level: L3
+    architecture_node_ref: "design §12 性能指标 / decomp-tree INT/IC1"
+    objective: "性能基准测试：消息延迟/审批闭环/1000条FPS"
+    timeout_minutes: 25
+    read_scope: ["Design §12 性能指标"]
+    write_scope: ["mobile/test/perf/"]
+    dependencies: ["IP01"]
+    acceptance: ["延迟 < 300ms", "FPS ≥ 55"]
+    verification: ["npx jest mobile/test/perf/"]
+    rollback: "git revert <commit>"
+
+  - packet_id: "IP04"
+    packet_kind: verification
+    lego_level: L3
+    architecture_node_ref: "design §8.1 失败路径矩阵 / decomp-tree INT/IC1"
+    objective: "错误矩阵 walkthrough：8 类异常场景全覆盖"
+    timeout_minutes: 30
+    read_scope: ["Design §8.1 失败路径矩阵"]
+    write_scope: []
+    dependencies: ["IP01", "IP02"]
+    acceptance: ["8 场景全通过"]
+    verification: ["manual walkthrough checklist"]
+    rollback: "—"

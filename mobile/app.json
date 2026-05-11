@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "ClawdBridge",
+    "slug": "clawdbridge",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "clawdbridge",
+    "splash": {
+      "backgroundColor": "#D97706"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.clawdbridge.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#D97706"
+      },
+      "package": "com.clawdbridge.app"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "clawdbridge-mobile"
+      }
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}

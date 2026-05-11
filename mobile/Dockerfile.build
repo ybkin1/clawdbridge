@@ -1,0 +1,80 @@
+# ClawdBridge Mobile APK Builder
+# 使用 Docker 在云服务器上构建 APK，无需本地 Android 环境
+# 支持国内镜像加速
+
+FROM node:18-slim
+
+# 安装必要依赖
+RUN apt-get update && apt-get install -y \
+    openjdk-17-jdk \
+    wget \
+    unzip \
+    git \
+    python3 \
+    make \
+    g++ \
+    sed \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置 Java 环境（关键修复）
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH=$JAVA_HOME/bin:$PATH
+
+# 验证 Java 安装
+RUN java -version && javac -version
+
+# 安装 Android SDK
+ENV ANDROID_HOME=/opt/android-sdk
+ENV PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
+
+RUN mkdir -p $ANDROID_HOME && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdline-tools.zip && \
+    unzip -q /tmp/cmdline-tools.zip -d $ANDROID_HOME/ && \
+    mkdir -p $ANDROID_HOME/cmdline-tools/latest && \
+    mv $ANDROID_HOME/cmdline-tools/bin $ANDROID_HOME/cmdline-tools/latest/ && \
+    mv $ANDROID_HOME/cmdline-tools/lib $ANDROID_HOME/cmdline-tools/latest/ && \
+    rm /tmp/cmdline-tools.zip
+
+# 接受许可证并安装必要组件
+RUN yes | sdkmanager --licenses && \
+    sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制项目文件
+COPY package*.json ./
+COPY app.json ./
+COPY eas.json ./
+COPY metro.config.js ./
+COPY tsconfig.json ./
+COPY App.tsx ./
+COPY assets ./assets
+COPY src ./src
+COPY android ./android
+COPY test ./test
+COPY jest.config.js ./
+
+# 使用国内 npm 镜像加速
+RUN npm config set registry https://registry.npmmirror.com
+
+# 安装依赖
+RUN npm install
+
+# 修改 Gradle 使用国内镜像（关键修复）
+RUN if [ -f android/gradle/wrapper/gradle-wrapper.properties ]; then \
+    sed -i 's|https://services.gradle.org/distributions/|https://mirrors.cloud.tencent.com/gradle/|g' android/gradle/wrapper/gradle-wrapper.properties; \
+    fi
+
+# 确保 gradlew 可执行
+RUN chmod +x android/gradlew
+
+# 构建 Release APK
+RUN cd android && ./gradlew assembleRelease --no-daemon
+
+# 输出 APK
+RUN mkdir -p /output && \
+    cp /app/android/app/build/outputs/apk/release/app-release.apk /output/clawdbridge.apk && \
+    ls -lh /output/
+
+CMD ["sh", "-c", "cp /output/clawdbridge.apk /output/clawdbridge-$(date +%Y%m%d).apk && echo 'APK 构建完成'"]

@@ -1,0 +1,7 @@
+exceptions:
+  - id: "cross-contract-naming-conflict"
+    severity: low
+    description: "task-directory-tree-spec.md v1 工件示例为 prd.md，与 file-naming-spec.md v2 四要素格式矛盾"
+    resolution: "需后续更新 task-directory-tree-spec.md 至 v2"
+    recorded_at: "2026-05-09"
+    status: closed

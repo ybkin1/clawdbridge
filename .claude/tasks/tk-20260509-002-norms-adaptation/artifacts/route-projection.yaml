@@ -1,0 +1,40 @@
+task_id: tk-20260509-002
+ownership_route: codex-self
+delivery_mode: full
+task_chain_route: self_improvement
+workflow_route: direct_build
+execution_orchestration_route: single_packet_direct
+review_requirement_route: self_review_allowed
+escalation_route: normal
+intent_route:
+  action_family: implementation
+  artifact_kind: code
+  required_contracts:
+    - task-tracking
+    - skill-tool-mapping
+    - task-directory-tree
+    - verification-checker
+  required_skills:
+    - frontend-design
+    - superpowers
+  verification_checks:
+    - route-output-closure-check
+    - state-projection-alignment-check
+    - dirty-hygiene-closure-check
+tool_routing:
+  available_tools:
+    - Read
+    - Grep
+    - Glob
+    - Bash
+    - Write
+    - Edit
+    - Agent
+  available_skills:
+    - frontend-design
+    - superpowers
+  unavailable_skills:
+    - anything-notebooklm
+negative_activation: []
+routed_at: "2026-05-09T15:30:00Z"
+routed_by: claude-code

@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+*.apk
+*.aab
+build-output/
+.env
+.env.local
+dist/
+.jest/
+*.log
+.DS_Store
+Thumbs.db

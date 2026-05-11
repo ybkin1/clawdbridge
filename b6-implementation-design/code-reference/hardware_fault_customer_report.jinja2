@@ -1,0 +1,143 @@
+{#
+  Hardware Fault Customer Report — Harness 业务分析模块
+
+  改编自 OpenClaw cld-dnode53-14018-final-report.md
+  职责：面向客户的简化版故障分析报告，隐藏敏感技术细节
+
+  位置：src/modules/business_analysis/report_templates/hardware_fault_customer_report.jinja2
+  Owner: PKG-09 (report generation)
+#}
+
+# Server Hardware Fault Report
+
+> **Report ID**: {{ report_uuid }}
+> **Incident Reference**: {{ incident.external_ref or incident.incident_uuid[:8] }}
+> **Report Date**: {{ generated_at }}
+> **Customer**: {{ tenant_name }}
+
+---
+
+## 1. Overview
+
+On **{{ incident.fault_occurred_at }}**, our monitoring system detected an anomaly on server asset **{{ system_asset.serial_number or system_asset.id[:8] }}** ({{ system_asset.model or "Unknown Model" }}).
+
+| Item | Details |
+|------|---------|
+| Fault Category | {{ incident.fault_category }} |
+| Severity Level | {{ incident.severity }} |
+| Current Status | {{ incident.current_status }} |
+| Affected System | {{ system_asset.serial_number or "Server " + system_asset.id[:8] }} |
+
+---
+
+## 2. Impact Assessment
+
+{% if affected_gpus %}
+The following GPU resources were affected:
+
+| GPU Index | Model | Serial Number |
+|-----------|-------|---------------|
+{% for gpu in affected_gpus %}
+| {{ gpu.gpu_index }} | {{ gpu.model }} | {{ gpu.serial or "Confidential" }} |
+{% endfor %}
+
+{% else %}
+No specific GPU resources were individually flagged.
+{% endif %}
+
+**Service Impact**: {{ service_impact or "Under assessment" }}
+
+---
+
+## 3. Root Cause Analysis
+
+{% if latest_diagnosis %}
+Based on our diagnostic analysis, the suspected root cause is:
+
+**> {{ latest_diagnosis.suspected_root_cause | replace("_", " ") | title }}**
+
+{{ root_cause_description or "Our engineering team has identified the technical factors contributing to this incident. A detailed technical review has been completed." }}
+
+**Analysis Confidence**: {{ "%.0f" | format(latest_diagnosis.confidence_score * 100) }}%
+
+{% else %}
+Our engineering team is currently conducting a thorough investigation to determine the root cause. We will update this report as soon as the analysis is complete.
+{% endif %}
+
+---
+
+## 4. Resolution Actions
+
+{% if repairs %}
+The following actions have been taken to resolve the issue:
+
+| # | Action | Status | Completed At |
+|---|--------|--------|--------------|
+{% for r in repairs %}
+| {{ loop.index }} | {{ r.action_type | replace("_", " ") | title }} | {{ r.action_status }} | {{ r.executed_at }} |
+{% endfor %}
+
+{% else %}
+Resolution actions are being planned or are in progress. Our team is working to restore full service as quickly as possible.
+{% endif %}
+
+---
+
+## 5. Verification
+
+{% if verifications %}
+Post-resolution verification has been performed:
+
+| Check | Expected Result | Actual Result | Status |
+|-------|-----------------|---------------|--------|
+{% for v in verifications %}
+| {{ v.check_type }} | {{ v.expected_result }} | {{ v.actual_result }} | {{ "Passed" if v.pass_flag else "Requires Attention" }} |
+{% endfor %}
+
+{% else %}
+System verification will be conducted following the completion of all resolution actions.
+{% endif %}
+
+---
+
+## 6. Prevention & Recommendations
+
+{% if incident_result and incident_result.recommendation %}
+{{ incident_result.recommendation }}
+
+{% else %}
+To minimize the likelihood of similar incidents in the future, we recommend:
+
+1. **Proactive Monitoring**: Continue utilizing our real-time monitoring services for early detection.
+2. **Regular Maintenance**: Ensure scheduled maintenance windows are maintained.
+3. **Firmware Updates**: Keep system firmware and drivers updated to the latest stable versions.
+{% endif %}
+
+**Recurrence Risk Level**: {{ incident_result.recurrence_risk or "Low" | title }}
+
+---
+
+## 7. Conclusion
+
+{% if incident_result %}
+This incident was concluded on **{{ incident_result.concluded_at }}**.
+
+{{ incident_result.summary }}
+
+{% else %}
+This incident is currently under active management. Our team will provide updates at key milestones and upon resolution.
+{% endif %}
+
+---
+
+## 8. Contact & Support
+
+For any questions regarding this report, please contact your assigned support representative or reach out through your support portal.
+
+- **Support Portal**: [Customer Support](https://support.example.com)
+- **Emergency Hotline**: Available 24/7 for severity Critical incidents
+
+---
+
+*This report was generated automatically by the Harness After-Sales Intelligence Platform.*
+*Template: hardware_fault_customer_report v1.0*

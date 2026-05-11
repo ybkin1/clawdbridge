@@ -1,0 +1,40 @@
+review_id: "tk-20260511-001-contract-attempt-1"
+task_id: "tk-20260511-001"
+gate_type: "contract"
+review_mode: "multi_agent"
+reviewers:
+  - reviewer_id: "agent-a-registry-structure"
+    verdict: "passed"
+    report_path: "reviews/review-contract-gate-attempt-1.md"
+    notes: "经核实，registry 命名符合 CLAUDE.md 解析规则；execution-traceability.md 包含完整 §1-§10。历史遗留问题已标记为 pre-existing。"
+  - reviewer_id: "agent-b-dependency-crossref"
+    verdict: "passed"
+    report_path: "reviews/review-contract-gate-attempt-1.md"
+    notes: "所有依赖闭合，交叉引用一致。无发现。"
+  - reviewer_id: "agent-c-checklist-checker-alignment"
+    verdict: "request_changes"
+    report_path: "reviews/review-contract-gate-attempt-1.md"
+    notes: "发现 registry.yaml 单复数字段冲突、stage4 缺少 §18、stage5/6 部分检查项精确度不足。"
+  - reviewer_id: "agent-d-executable-impact"
+    verdict: "request_changes"
+    report_path: "reviews/review-contract-gate-attempt-1.md"
+    notes: "发现 CLAUDE.md 缺失 execution-traceability、registry 与契约正文依赖声明不一致、部分 manual checker 机制不完整。"
+verdict: "request_changes"
+review_date: "2026-05-11T12:00:00+08:00"
+round: 1
+parent_agent_id: "claude-code-orchestrator"
+attempts_in_streak: 1
+findings_summary:
+  critical:
+    - "CLAUDE.md 契约导航表缺失 execution-traceability（C-1）"
+  major:
+    - "registry.yaml 存在 checker_ref/checker_refs 重复字段导致 contract-schema 执行机制悬空（M-1）"
+    - "Stage 4 评审清单缺少 §18 检查项（M-2）"
+    - "lego-assembly-workflow required_inputs 与 registry depends_on 对 architecture-blueprint 声明不一致（M-3）"
+  minor:
+    - "Stage 5 未检查 exceptions 的 approved_by 字段（m-1）"
+    - "Stage 6 oversized 审批记录措辞不够精确（m-2）"
+    - "Stage 5 未验证 oversized_reason 的 4 个允许类别（m-3）"
+    - "Stage 4 未检查双向引用就绪（m-4）"
+    - "manual 模式 checker 缺少触发与归档机制定义（m-5）"
+    - "execution-traceability §6.1 持续审计缺少可执行机制（m-6）"

@@ -1,0 +1,223 @@
+---
+# OpenClaw Export Bundle Schema
+# Version: 1.0.0
+# Scope: B6 owner evidence (docs-only)
+# Purpose: Define the structure of an OpenClaw MVP export bundle for Harness import staging
+
+bundle_spec:
+  bundle_format_version: "1.0.0"
+  source_system: openclaw
+  source_version: mvp-202605
+  bundle_name_pattern: "openclaw-{domain}-{date}-{sequence}"
+  encoding: utf-8
+  compression: gzip
+  serialization: jsonl-per-table
+
+bundle_manifest:
+  required_fields:
+    - bundle_id          # UUID v4
+    - bundle_name        # human readable
+    - created_at         # ISO-8601
+    - exported_by        # user/system identifier
+    - source_system      # "openclaw"
+    - source_version     # "mvp-202605"
+    - tenant_id          # target Harness tenant UUID
+    - bundle_hash        # SHA-256 of the entire bundle archive
+    - table_count        # integer
+    - record_count       # integer
+    - tables             # array of table manifest entries
+
+  table_manifest_entry:
+    required_fields:
+      - table_name       # e.g. "harness_hardware.servers"
+      - schema_name      # e.g. "harness_hardware"
+      - record_count     # integer
+      - file_path        # relative path inside bundle
+      - file_hash        # SHA-256 of the .jsonl file
+      - columns          # array of column descriptors
+
+    column_descriptor:
+      required_fields:
+        - name           # column name
+        - type           # postgres_type or json_type
+        - nullable       # boolean
+      optional_fields:
+        - max_length     # for varchar/text
+        - precision      # for numeric/decimal
+        - scale          # for numeric/decimal
+        - default_value  # literal or "gen_random_uuid()"
+        - description    # human readable
+        - source_enum    # if enum type, list allowed values
+
+table_definitions:
+  harness_hardware.servers:
+    description: "整机设备（8U 智算服务器等）"
+    source_file: "03_hardware.sql"
+    formal_target: "harness_hardware.servers"
+    tenant_scope: true
+    columns:
+      - { name: id,                type: uuid,        nullable: false, default_value: "gen_random_uuid()" }
+      - { name: serial_no,         type: varchar,     nullable: false, max_length: 64 }
+      - { name: model,             type: varchar,     nullable: false, max_length: 128 }
+      - { name: vendor,            type: varchar,     nullable: true,  max_length: 64 }
+      - { name: form_factor,       type: varchar,     nullable: true,  max_length: 32,  source_enum: ["8U","4U","2U","1U"] }
+      - { name: status,            type: varchar,     nullable: true,  max_length: 32,  source_enum: ["active","maintenance","decommissioned"], default_value: "active" }
+      - { name: install_date,      type: date,        nullable: true }
+      - { name: location,          type: varchar,     nullable: true,  max_length: 256 }
+      - { name: bmc_ip,            type: inet,        nullable: true }
+      - { name: redfish_endpoint,  type: varchar,     nullable: true,  max_length: 256 }
+      - { name: metadata,          type: jsonb,       nullable: true }
+      - { name: created_at,        type: timestamptz, nullable: true,  default_value: "NOW()" }
+      - { name: updated_at,        type: timestamptz, nullable: true,  default_value: "NOW()" }
+    missing_in_source:
+      - { name: tenant_id,         type: uuid,        nullable: false, harness_required: true }
+      - { name: asset_device_id,   type: uuid,        nullable: true,  harness_required: true, fk_target: "harness_asset.devices.id" }
+    seed_data_count: 0
+
+  harness_hardware.components:
+    description: "部件（GPU/CPU/内存/电源/风扇/主板/NIC/NVMe）"
+    source_file: "03_hardware.sql"
+    formal_target: "harness_hardware.components"
+    tenant_scope: true
+    columns:
+      - { name: id,                type: uuid,        nullable: false, default_value: "gen_random_uuid()" }
+      - { name: server_id,         type: uuid,        nullable: true,  fk_target: "harness_hardware.servers.id" }
+      - { name: component_type,    type: varchar,     nullable: false, max_length: 32,  source_enum: ["gpu","cpu","memory","psu","fan","motherboard","nic","nvme"] }
+      - { name: slot,              type: varchar,     nullable: true,  max_length: 32 }
+      - { name: part_no,           type: varchar,     nullable: true,  max_length: 64 }
+      - { name: serial_no,         type: varchar,     nullable: true,  max_length: 64 }
+      - { name: model,             type: varchar,     nullable: true,  max_length: 128 }
+      - { name: vendor,            type: varchar,     nullable: true,  max_length: 64 }
+      - { name: firmware_version,  type: varchar,     nullable: true,  max_length: 32 }
+      - { name: status,            type: varchar,     nullable: true,  max_length: 32,  source_enum: ["active","degraded","failed","replaced"], default_value: "active" }
+      - { name: install_date,      type: date,        nullable: true }
+      - { name: warranty_end,      type: date,        nullable: true }
+      - { name: metadata,          type: jsonb,       nullable: true }
+      - { name: created_at,        type: timestamptz, nullable: true,  default_value: "NOW()" }
+    missing_in_source:
+      - { name: tenant_id,         type: uuid,        nullable: false, harness_required: true }
+    seed_data_count: 0
+
+  harness_hardware.gpu_fault_dict:
+    description: "GPU 故障字典（Xid 错误码、ECC、NVLink、PCIe、热节流）"
+    source_file: "03_hardware.sql"
+    formal_target: "harness_hardware.gpu_fault_dict"
+    tenant_scope: false
+    columns:
+      - { name: id,                type: uuid,        nullable: false, default_value: "gen_random_uuid()" }
+      - { name: gpu_model,         type: varchar,     nullable: true,  max_length: 64 }
+      - { name: xid_code,          type: integer,     nullable: true }
+      - { name: fault_type,        type: varchar,     nullable: false, max_length: 64 }
+      - { name: severity,          type: varchar,     nullable: false, max_length: 16,  source_enum: ["critical","warning","info"] }
+      - { name: description,       type: text,        nullable: true }
+      - { name: root_cause,        type: text,        nullable: true }
+      - { name: resolution,        type: text,        nullable: true }
+      - { name: vendor_manual_ref, type: varchar,     nullable: true,  max_length: 256 }
+      - { name: applicable_to,     type: jsonb,       nullable: true }
+      - { name: created_at,        type: timestamptz, nullable: true,  default_value: "NOW()" }
+    seed_data_count: 10
+    seed_data_gaps: [ "B200","B300","H800","RTX 4090","RTX 5090" ]
+
+  harness_hardware.fault_logs:
+    description: "故障日志（DCGM/pynvml/IPMI/BMC/Redfish 采集）"
+    source_file: "03_hardware.sql"
+    formal_target: "harness_hardware.fault_logs"
+    tenant_scope: true
+    columns:
+      - { name: id,                     type: uuid,        nullable: false, default_value: "gen_random_uuid()" }
+      - { name: server_id,              type: uuid,        nullable: true,  fk_target: "harness_hardware.servers.id" }
+      - { name: component_id,           type: uuid,        nullable: true,  fk_target: "harness_hardware.components.id" }
+      - { name: fault_type,             type: varchar,     nullable: false, max_length: 64 }
+      - { name: fault_code,             type: varchar,     nullable: true,  max_length: 32 }
+      - { name: severity,               type: varchar,     nullable: false, max_length: 16,  source_enum: ["critical","warning","info"] }
+      - { name: description,            type: text,        nullable: true }
+      - { name: raw_log,                type: text,        nullable: true }
+      - { name: source,                 type: varchar,     nullable: true,  max_length: 32,  source_enum: ["dcgm","bmc","pynvml","ipmi","redfish"] }
+      - { name: detected_at,            type: timestamptz, nullable: false }
+      - { name: resolved_at,            type: timestamptz, nullable: true }
+      - { name: resolution_action,      type: text,        nullable: true }
+      - { name: replaced_component_id,  type: uuid,        nullable: true,  fk_target: "harness_hardware.components.id" }
+      - { name: metadata,               type: jsonb,       nullable: true }
+      - { name: created_at,             type: timestamptz, nullable: true,  default_value: "NOW()" }
+    missing_in_source:
+      - { name: tenant_id,              type: uuid,        nullable: false, harness_required: true }
+    seed_data_count: 0
+
+  harness_hardware.metrics_snapshots:
+    description: "监控指标快照（温度/功耗/利用率/ECC 计数）"
+    source_file: "03_hardware.sql"
+    formal_target: "harness_hardware.metrics_snapshots"
+    tenant_scope: true
+    columns:
+      - { name: id,                type: uuid,        nullable: false, default_value: "gen_random_uuid()" }
+      - { name: server_id,         type: uuid,        nullable: true,  fk_target: "harness_hardware.servers.id" }
+      - { name: component_id,      type: uuid,        nullable: true,  fk_target: "harness_hardware.components.id" }
+      - { name: metric_name,       type: varchar,     nullable: false, max_length: 64 }
+      - { name: metric_value,      type: double,      nullable: false }
+      - { name: unit,              type: varchar,     nullable: true,  max_length: 16 }
+      - { name: collected_at,      type: timestamptz, nullable: false, default_value: "NOW()" }
+      - { name: metadata,          type: jsonb,       nullable: true }
+    missing_in_source:
+      - { name: tenant_id,         type: uuid,        nullable: false, harness_required: true }
+    harness_partition_requirement: "RANGE PARTITION BY (collected_at) monthly"
+    seed_data_count: 0
+
+  harness_hardware.vendor_manuals:
+    description: "厂商故障手册知识库（pgvector 向量化）"
+    source_file: "03_hardware.sql"
+    formal_target: "harness_hardware.vendor_manuals"
+    tenant_scope: false
+    columns:
+      - { name: id,                type: uuid,        nullable: false, default_value: "gen_random_uuid()" }
+      - { name: vendor,            type: varchar,     nullable: false, max_length: 64 }
+      - { name: device_type,       type: varchar,     nullable: true,  max_length: 64 }
+      - { name: model,             type: varchar,     nullable: true,  max_length: 128 }
+      - { name: title,             type: varchar,     nullable: false, max_length: 256 }
+      - { name: version,           type: varchar,     nullable: true,  max_length: 32 }
+      - { name: content,           type: text,        nullable: true }
+      - { name: embedding,         type: vector,      nullable: true,  vector_dimension: 1024 }
+      - { name: file_path,         type: varchar,     nullable: true,  max_length: 512 }
+      - { name: ingested_at,       type: timestamptz, nullable: true,  default_value: "NOW()" }
+    harness_dimension_question: "OpenClaw uses 1024 (bge-m3); Harness patch uses text-embedding-3-small (1536) or bge-m3 (1024). Need owner decision."
+    seed_data_count: 0
+
+  harness_business.devices:
+    description: "设备表"
+    source_file: "01_business.sql"
+    formal_target: "harness_asset.devices"
+    tenant_scope: true
+    columns:
+      - { name: id,                type: uuid,        nullable: false, default_value: "gen_random_uuid()" }
+      - { name: serial_no,         type: varchar,     nullable: false, max_length: 100 }
+      - { name: customer_id,       type: uuid,        nullable: true }
+      - { name: model,             type: varchar,     nullable: true,  max_length: 200 }
+      - { name: product_line,      type: varchar,     nullable: true,  max_length: 100 }
+      - { name: install_date,      type: date,        nullable: true }
+      - { name: warranty_start,    type: date,        nullable: true }
+      - { name: warranty_end,      type: date,        nullable: true }
+      - { name: status,            type: varchar,     nullable: true,  max_length: 20,  source_enum: ["active","inactive","retired"], default_value: "active" }
+      - { name: location,          type: varchar,     nullable: true,  max_length: 255 }
+      - { name: created_at,        type: timestamptz, nullable: true,  default_value: "NOW()" }
+    missing_in_source:
+      - { name: tenant_id,         type: uuid,        nullable: false, harness_required: true }
+      - { name: current_rack_unit_id, type: uuid,     nullable: true,  harness_required: true, fk_target: "harness_dcim.rack_units.id" }
+      - { name: is_active,         type: boolean,     nullable: true,  default_value: "true" }
+    migration_note: "OpenClaw harness_business.devices maps to Harness harness_asset.devices. Reconciliation needed."
+    seed_data_count: 0
+
+bundle_validation_rules:
+  - rule_id: BV-01
+    description: "bundle_hash must be SHA-256 of the entire archive"
+    check: "sha256sum bundle.tar.gz == manifest.bundle_hash"
+  - rule_id: BV-02
+    description: "Every table file hash must match manifest"
+    check: "sha256sum {table.file_path} == table.file_hash"
+  - rule_id: BV-03
+    description: "tenant_id must be present and valid UUID"
+    check: "uuid_regex.match(manifest.tenant_id)"
+  - rule_id: BV-04
+    description: "No table may contain tenant-scoped data without tenant_id column"
+    check: "for table in tables: if table.tenant_scope: assert 'tenant_id' in table.columns"
+  - rule_id: BV-05
+    description: "Record counts must match actual JSONL line counts"
+    check: "wc -l {table.file_path} == table.record_count"

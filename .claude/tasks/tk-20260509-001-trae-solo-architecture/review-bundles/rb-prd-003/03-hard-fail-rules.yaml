@@ -1,0 +1,13 @@
+hard_fail_rules:
+  - rule: "artifact-naming-violation"
+    description: "工件文件命名未遵循 project-slug-type-vN 三要素格式"
+    severity: blocker
+  - rule: "storage-outside-project"
+    description: "产出物写入项目工作目录之外"
+    severity: blocker
+  - rule: "no-depth-declaration"
+    description: "PRD 未声明 document_class / depth_profile / maturity_target / confidentiality"
+    severity: critical
+  - rule: "hardcoded-credential"
+    description: "文档中出现硬编码密钥/Token/密码"
+    severity: blocker

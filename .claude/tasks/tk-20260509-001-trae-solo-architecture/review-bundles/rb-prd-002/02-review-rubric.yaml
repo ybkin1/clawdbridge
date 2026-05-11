@@ -1,0 +1,13 @@
+rubric:
+  value_gate:
+    checks:
+      - id: "goal-user-match"
+        description: "目标用户是否匹配原始意图中的用户画像"
+      - id: "scenario-coverage"
+        description: "核心场景是否覆盖用户描述的使用方式"
+      - id: "success-actions"
+        description: "用户能否通过本产品完成其期望的操作"
+      - id: "failure-triggers-excluded"
+        description: "不可接受的失败路径是否已被排除"
+      - id: "rewrite-required"
+        description: "是否仍需下位使用者重写关键内容才能使用"

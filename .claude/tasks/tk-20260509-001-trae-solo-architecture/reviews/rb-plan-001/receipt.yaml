@@ -1,0 +1,14 @@
+review_id: "rb-plan-001"
+task_id: "tk-20260509-001"
+gate_type: "professional"
+verdict: "passed"
+review_date: "2026-05-09"
+round: 1
+artifact_reviewed: "artifacts/clawdbridge-dev-plan-tk-20260509-001-v1.md"
+conclusion: "passed"
+score: 95
+max_score: 100
+blockers: 0
+suggestions: 1
+reviewer: "synthesis-agent"
+report_path: "synthesis-report.md"

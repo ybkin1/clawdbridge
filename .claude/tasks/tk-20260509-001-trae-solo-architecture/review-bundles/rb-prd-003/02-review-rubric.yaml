@@ -1,0 +1,15 @@
+rubric:
+  contract_gate:
+    checks:
+      - id: "file-naming-compliance"
+        description: "所有文件命名符合 file-naming-spec v2"
+      - id: "directory-tree-compliance"
+        description: "任务目录结构符合 task-directory-tree-spec"
+      - id: "storage-location-compliance"
+        description: "所有文件写入项目工作目录"
+      - id: "document-depth-compliance"
+        description: "PRD 声明 depth_profile 和 maturity_target"
+      - id: "security-no-hardcoded"
+        description: "无硬编码密钥/Token/路径"
+      - id: "completeness-audit"
+        description: "完整性审计三道防线"

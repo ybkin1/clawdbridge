@@ -1,0 +1,17 @@
+value_evidence:
+  trace:
+    - intent: "基于 Trae Solo 架构深度学习"
+      evidence: "§1.2 产品定位对比表、§6.3.3 State Sync 借鉴、附录B 对标表"
+      verdict: covered
+    - intent: "设计手机端纯对话客户端"
+      evidence: "§3 四类用户画像 + 五场景、§4.3 纯对话式任务交互、§7 完整 UI 线框"
+      verdict: covered
+    - intent: "通过 clwd-on-desk Bridge 驱动 Claude Code CLI"
+      evidence: "§6.1 整体架构图、§6.2 技术选型 Bridge Server 基于 clwd-on-desk、§6.3.2 审批流转含 Claude Code stdin"
+      verdict: covered
+    - intent: "远程审批"
+      evidence: "F-06 审批卡片（6 条子需求，含推送/超时/历史）、§6.3.2 审批流转数据流"
+      verdict: covered
+    - intent: "任务跟进"
+      evidence: "F-10 State Sync（5 条子需求）、F-05 执行反馈、F-08 对话管理"
+      verdict: covered

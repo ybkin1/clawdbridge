@@ -1,0 +1,29 @@
+task_id: tk-20260509-001
+title: "Claude Code 规范架构全面检查与报告"
+delivery_mode: full
+action_family: research
+phase: research
+subphase: authoring
+phase_status: passed
+current_primary_artifact: ".claude/tasks/tk-20260509-001/artifacts/norms-architecture-report.md"
+current_gate_bundle: ""
+gate_results:
+  self_review:
+    phase_anchor: research
+    required_gates: [professional]
+    active_gate: professional
+    status: passed
+    mode: self_review
+closeout_allowed: true
+last_review_report: ""
+last_blocker_report: ""
+route_projection_ref: ""
+architecture_blueprint_ref: ""
+architecture_blueprint_status: not_required
+context_budget_percent_estimate: 55
+readme_requirement:
+  status: required
+  reason: "交付态报告需包含架构总览、契约索引、执行热路径、评审体系、质量防线、检查器清单"
+  recorded_at: "2026-05-09T00:00:00Z"
+  decided_by: "claude-code"
+updated_at: "2026-05-09T00:00:00Z"

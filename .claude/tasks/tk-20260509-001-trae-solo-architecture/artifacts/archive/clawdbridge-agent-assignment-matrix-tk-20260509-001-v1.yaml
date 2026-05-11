@@ -1,0 +1,294 @@
+# agent-assignment-matrix.yaml — ClawdBridge Mobile Agent 分配矩阵
+# 规范: lego-assembly-workflow.md §4.6.2, §5
+# 日期: 2026-05-09
+
+packets:
+  - packet_id: "P1"
+    lego_level: L3
+    objective: "实现 Bridge Server WebSocket Hub"
+    timeout_minutes: 60
+    read_scope:
+      - "§5.4 WebSocket 端点"
+      - "§5.5 消息类型完整规格"
+      - "§7.1 WSHub 模块职责"
+      - "§3.1 WebSocket 连接状态机"
+    write_scope:
+      - "bridge-server/src/ws-hub.ts"
+      - "bridge-server/src/message-router.ts"
+    dependencies: []
+    acceptance:
+      - "连接握手成功"
+      - "10 种消息类型正确路由"
+      - "30s 心跳超时断开"
+    verification:
+      - "node bridge-server/test/ws-hub.test.ts"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P2"
+    lego_level: L3
+    objective: "实现 CLIDriver"
+    timeout_minutes: 90
+    read_scope:
+      - "§7.2 CLIDriver 伪代码"
+      - "§3.2 消息生命周期"
+      - "§8.1 进程崩溃恢复"
+    write_scope:
+      - "bridge-server/src/cli-driver.ts"
+      - "bridge-server/src/claude-parser.ts"
+    dependencies: ["P1"]
+    acceptance:
+      - "spawn 成功返回 ChildProcess"
+      - "stdout 解析为 JSON 消息"
+      - "exit code ≠ 0 → 广播 Error"
+      - "kill() SIGTERM → SIGKILL (3s)"
+    verification:
+      - "node bridge-server/test/cli-driver.test.ts"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P3"
+    lego_level: L3
+    objective: "实现 ApprovalEngine"
+    timeout_minutes: 60
+    read_scope:
+      - "§7.3 ApprovalEngine 伪代码"
+      - "§3.3 审批状态机"
+      - "§8.1 审批超时降级"
+    write_scope:
+      - "bridge-server/src/approval-engine.ts"
+    dependencies: ["P1"]
+    acceptance:
+      - "intercept() 生成 approval_request"
+      - "手机响应 → resolve Promise"
+      - "60s 超时 → auto_rejected"
+      - "白名单跳过等待"
+    verification:
+      - "node bridge-server/test/approval-engine.test.ts"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P4"
+    lego_level: L3
+    objective: "实现 AuthService + JWT"
+    timeout_minutes: 45
+    read_scope:
+      - "§5.1 认证 API 规格"
+      - "§9.1 认证架构"
+    write_scope:
+      - "bridge-server/src/auth-service.ts"
+      - "bridge-server/src/auth-middleware.ts"
+    dependencies: ["P1"]
+    acceptance:
+      - "OAuth → JWT + refreshToken"
+      - "无 token → 401"
+      - "POST /refresh → 新 pair"
+    verification:
+      - "node bridge-server/test/auth-service.test.ts"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P5"
+    lego_level: L3
+    objective: "实现 Bridge REST API"
+    timeout_minutes: 60
+    read_scope:
+      - "§5.2 设备 API"
+      - "§5.3 会话 API"
+    write_scope:
+      - "bridge-server/src/routes/devices.ts"
+      - "bridge-server/src/routes/sessions.ts"
+    dependencies: ["P1", "P4"]
+    acceptance:
+      - "GET /devices → 设备列表"
+      - "POST /pair → 创建记录"
+      - "GET /sessions → 按时间降序"
+      - "GET /messages?before → 分页"
+    verification:
+      - "node bridge-server/test/routes.test.ts"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P6"
+    lego_level: L3
+    objective: "创建 Expo RN 脚手架"
+    timeout_minutes: 30
+    read_scope:
+      - "§2 组件树"
+      - "§4 Zustand Store"
+      - "§6.2 技术选型"
+    write_scope:
+      - "mobile/App.tsx"
+      - "mobile/src/navigation/"
+      - "mobile/src/stores/"
+      - "mobile/package.json"
+    dependencies: []
+    acceptance:
+      - "npx expo start 成功"
+      - "Tab 三页可切换"
+      - "Zustand store 可用"
+    verification:
+      - "cd mobile && npx expo start"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P7"
+    lego_level: L3
+    objective: "实现 WebSocketClient + MessageRouter"
+    timeout_minutes: 90
+    read_scope:
+      - "§5.4-5.5 消息协议"
+      - "§3.1 连接状态机"
+      - "§8.2 去重"
+    write_scope:
+      - "mobile/src/services/websocket-client.ts"
+      - "mobile/src/services/message-router.ts"
+    dependencies: ["P6"]
+    acceptance:
+      - "connect 握手成功"
+      - "send → Bridge 收到"
+      - "接收流 → ChatStore 更新"
+      - "断线重连 + session_sync"
+      - "seq 去重"
+    verification:
+      - "npx jest mobile/test/websocket-client.test.ts"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P8"
+    lego_level: L2
+    objective: "实现 AuthScreen + DeviceScreen"
+    timeout_minutes: 60
+    read_scope:
+      - "§2 组件树"
+      - "§5.1-5.2 API"
+    write_scope:
+      - "mobile/src/screens/auth-screen.tsx"
+      - "mobile/src/screens/device-screen.tsx"
+      - "mobile/src/stores/device-store.ts"
+    dependencies: ["P6", "P4"]
+    acceptance:
+      - "OAuth 登录 → JWT 存储 → 跳转主页"
+      - "设备列表含在线/离线"
+      - "一键配对/解绑"
+    verification:
+      - "npx jest mobile/test/auth-screen.test.tsx"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P9"
+    lego_level: L2
+    objective: "实现 ChatScreen + ChatStore"
+    timeout_minutes: 120
+    read_scope:
+      - "§2 ChatScreen 组件树"
+      - "§4.2 ChatStore 接口"
+      - "§3.2 消息生命周期"
+    write_scope:
+      - "mobile/src/screens/chat-screen.tsx"
+      - "mobile/src/components/message-bubble.tsx"
+      - "mobile/src/components/tool-call-card.tsx"
+      - "mobile/src/components/error-card.tsx"
+      - "mobile/src/stores/chat-store.ts"
+    dependencies: ["P7"]
+    acceptance:
+      - "发送 → 乐观更新 → 流式打字机效果"
+      - "代码块语法高亮"
+      - "工具调用卡片"
+      - "ErrorCard 含修复按钮"
+      - "FlatList 1000 条 FPS ≥ 55"
+    verification:
+      - "npx jest mobile/test/chat-screen.test.tsx"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P10"
+    lego_level: L2
+    objective: "实现 ApprovalCard + 审批交互"
+    timeout_minutes: 60
+    read_scope:
+      - "§3.3 审批状态机"
+      - "§5.5 审批消息类型"
+      - "§7.2 审批卡片 UI"
+    write_scope:
+      - "mobile/src/components/approval-card.tsx"
+      - "mobile/src/hooks/use-approval-handler.ts"
+    dependencies: ["P7", "P3"]
+    acceptance:
+      - "收到请求 → 弹卡片 + 振动"
+      - "允许 → approved"
+      - "拒绝 → rejected"
+      - "会话始终 → scope=session"
+      - "超时 60s → 卡片消失"
+    verification:
+      - "npx jest mobile/test/approval-card.test.tsx"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P11"
+    lego_level: L2
+    objective: "实现 SessionList + TaskDashboard + SessionStore"
+    timeout_minutes: 60
+    read_scope:
+      - "§2 组件树"
+      - "§4.1 SessionStore"
+      - "§7.2 对话列表线框"
+    write_scope:
+      - "mobile/src/screens/session-list-screen.tsx"
+      - "mobile/src/screens/task-dashboard-screen.tsx"
+      - "mobile/src/stores/session-store.ts"
+    dependencies: ["P7", "P12"]
+    acceptance:
+      - "按时间降序/搜索/在线标识/未读角标"
+    verification:
+      - "npx jest mobile/test/session-list-screen.test.tsx"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P12"
+    lego_level: L2
+    objective: "实现 SQLite 持久化"
+    timeout_minutes: 60
+    read_scope:
+      - "§6.1 DDL"
+      - "§6.2 分页策略"
+    write_scope:
+      - "mobile/src/db/database.ts"
+      - "mobile/src/db/session-dao.ts"
+      - "mobile/src/db/message-dao.ts"
+    dependencies: ["P6"]
+    acceptance:
+      - "5 张表创建"
+      - "消息 CRUD"
+      - "分页 50 条/次"
+      - "WAL 模式"
+    verification:
+      - "npx jest mobile/test/db.test.ts"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P13"
+    lego_level: L1
+    objective: "端到端消息流集成测试"
+    timeout_minutes: 60
+    read_scope:
+      - "§3.2 消息生命周期"
+      - "§8.1 失败路径"
+    write_scope:
+      - "bridge-server/test/e2e/"
+      - "mobile/test/e2e/"
+    dependencies: ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "P11", "P12"]
+    acceptance:
+      - "发送 → Bridge → Claude → 响应流回"
+      - "代码块高亮"
+      - "断网重连恢复"
+    verification:
+      - "bridge-server/test/e2e/full-flow.test.ts"
+    rollback: "git revert <commit>"
+
+  - packet_id: "P14"
+    lego_level: L1
+    objective: "审批闭环端到端测试"
+    timeout_minutes: 45
+    read_scope:
+      - "§3.3 审批状态机"
+      - "§7.3 ApprovalEngine"
+      - "§8.1 审批超时"
+    write_scope:
+      - "bridge-server/test/e2e/approval-flow.test.ts"
+    dependencies: ["P3", "P10"]
+    acceptance:
+      - "允许 → Claude 继续"
+      - "拒绝 → Claude 中止"
+      - "超时 → auto_rejected"
+    verification:
+      - "mock Claude → 验证全链路"
+    rollback: "git revert <commit>"

@@ -1,0 +1,16 @@
+hard_fail_rules:
+  - rule: "no-user-intent-trace"
+    description: "任何功能需求无法追溯到 00-user-intent.md 中的用户原始需求"
+    severity: blocker
+
+  - rule: "missing-out-of-scope"
+    description: "PRD 缺少明确的非目标 (out of scope) 章节"
+    severity: blocker
+
+  - rule: "security-gap-no-auth"
+    description: "认证/授权设计存在明显安全漏洞"
+    severity: blocker
+
+  - rule: "unverified-external-dep"
+    description: "关键外部依赖未在 §13 风险与依赖中声明"
+    severity: critical

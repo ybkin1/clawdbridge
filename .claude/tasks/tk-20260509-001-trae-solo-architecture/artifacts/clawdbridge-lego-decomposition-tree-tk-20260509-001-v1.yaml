@@ -1,0 +1,131 @@
+# lego-decomposition-tree.yaml — ClawdBridge Mobile 乐高拆解树
+# 规范: lego-assembly-workflow.md §5
+# 日期: 2026-05-09
+
+lego_tree:
+  L0:
+    name: "ClawdBridge Mobile + Bridge Server"
+    description: "手机纯对话客户端 + 桌面 Bridge 服务 + Claude Code CLI 驱动"
+
+  L1:
+    - id: "MB"
+      name: "Mobile App"
+      description: "React Native 移动端，纯对话 UI"
+      depends_on: []
+
+      L2:
+        - id: "MC1"
+          name: "认证与设备管理"
+          L3:
+            - id: "MU1a"
+              name: "AuthScreen"
+              packet_id: "P8"
+            - id: "MU1b"
+              name: "DeviceScreen + 配对"
+              packet_id: "P8"
+            - id: "MU1c"
+              name: "Token 管理 (SecureStore)"
+              packet_id: "P8"
+
+        - id: "MC2"
+          name: "对话交互"
+          L3:
+            - id: "MU2a"
+              name: "ChatScreen + MessageList"
+              packet_id: "P9"
+            - id: "MU2b"
+              name: "ApprovalCard + 交互"
+              packet_id: "P10"
+            - id: "MU2c"
+              name: "InputBar (文本+语音)"
+              packet_id: "P9"
+
+        - id: "MC3"
+          name: "会话与任务管理"
+          L3:
+            - id: "MU3a"
+              name: "SessionList"
+              packet_id: "P11"
+            - id: "MU3b"
+              name: "TaskDashboard"
+              packet_id: "P11"
+
+        - id: "MC4"
+          name: "通信基础设施"
+          L3:
+            - id: "MU4a"
+              name: "WebSocketClient"
+              packet_id: "P7"
+            - id: "MU4b"
+              name: "MessageRouter"
+              packet_id: "P7"
+            - id: "MU4c"
+              name: "HttpClient"
+              packet_id: "P7"
+
+        - id: "MC5"
+          name: "持久化"
+          L3:
+            - id: "MU5a"
+              name: "SQLite DB + DAO"
+              packet_id: "P12"
+
+    - id: "BS"
+      name: "Bridge Server"
+      description: "桌面 WebSocket + REST 服务，桥接手机与 Claude Code"
+      depends_on: []
+
+      L2:
+        - id: "BC1"
+          name: "通信层"
+          L3:
+            - id: "BU1a"
+              name: "WSHub"
+              packet_id: "P1"
+            - id: "BU1b"
+              name: "REST API"
+              packet_id: "P5"
+
+        - id: "BC2"
+          name: "认证"
+          L3:
+            - id: "BU2a"
+              name: "AuthService + JWT"
+              packet_id: "P4"
+
+        - id: "BC3"
+          name: "Claude 驱动"
+          L3:
+            - id: "BU3a"
+              name: "CLIDriver"
+              packet_id: "P2"
+            - id: "BU3b"
+              name: "ApprovalEngine"
+              packet_id: "P3"
+
+        - id: "BC4"
+          name: "设备管理"
+          L3:
+            - id: "BU4a"
+              name: "DeviceManager"
+              packet_id: "P5"
+
+    - id: "INT"
+      name: "集成联调"
+      description: "端到端测试"
+      depends_on: ["MB", "BS"]
+
+      L2:
+        - id: "IC1"
+          name: "端到端消息流"
+          L3:
+            - id: "IU1a"
+              name: "全链路 E2E"
+              packet_id: "P13"
+
+        - id: "IC2"
+          name: "审批闭环"
+          L3:
+            - id: "IU2a"
+              name: "审批全链路"
+              packet_id: "P14"

@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  cloud-agent:
+    build: ./cloud-agent
+    ports:
+      - "4338:4338"
+    environment:
+      - NODE_ENV=production
+      - PORT=4338
+      - DB_PATH=/data/clawdbridge.db
+      - JWT_SECRET=${JWT_SECRET}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+    volumes:
+      - agent-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4338/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  agent-data:

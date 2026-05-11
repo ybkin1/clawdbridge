@@ -1,0 +1,258 @@
+# Checker 索引（Checker Registry Index）
+# Purpose: 建立契约 → checker → gate 的纵向映射
+# Updated: 2026-05-11
+
+version: 1
+updated_at: "2026-05-11"
+
+checkers:
+  # === 现有 Checkers (10个) ===
+  route-output-closure-check:
+    script: route-output-closure-check.sh
+    mode: automated
+    scope: task state, 00-task-state.yaml
+    gate_binding: contract
+    contracts: [intent-routing, task-tracking]
+    stage: []
+    description: "路由输出是否闭合"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
+  state-projection-alignment-check:
+    script: state-projection-alignment-check.sh
+    mode: automated
+    scope: 00-task-state.yaml vs README.md/board.yaml
+    gate_binding: contract
+    contracts: [task-tracking, intent-routing]
+    stage: []
+    description: "状态与投影是否一致"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
+  review-consistency-check:
+    script: review-consistency-check.sh
+    mode: hybrid
+    scope: review-bundles/, reviews/
+    gate_binding: contract
+    contracts: [review-gates, review-consistency-checklist]
+    stage: []
+    description: "评审证据链是否一致"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
+  dirty-chain-prevention-check:
+    script: dirty-chain-prevention-check.sh
+    mode: automated
+    scope: task directory, artifacts/
+    gate_binding: [professional, contract]
+    contracts: [dirty-hygiene, task-tracking]
+    stage: []
+    description: "脏链路防止是否到位"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
+  dirty-hygiene-closure-check:
+    script: dirty-hygiene-closure-check.sh
+    mode: automated
+    scope: task directory, all write ops
+    gate_binding: contract
+    contracts: [dirty-hygiene, task-tracking]
+    stage: []
+    description: "脏数据卫生是否闭合"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
+  dangling-reference-check:
+    script: dangling-reference-check.sh
+    mode: automated
+    scope: all markdown/yaml deliverables
+    gate_binding: professional
+    contracts: [document-depth, task-tracking]
+    stage: []
+    description: "是否有悬空引用"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
+  stale-projection-cleanup-check:
+    script: stale-projection-cleanup-check.sh
+    mode: automated
+    scope: README.md, board.yaml, 派生文件
+    gate_binding: contract
+    contracts: [task-tracking, task-readme-lifecycle]
+    stage: []
+    description: "过期投影是否清理"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
+  subagent-orchestration-check:
+    script: subagent-orchestration-check.sh
+    mode: hybrid
+    scope: Agent tool invocations, manifest
+    gate_binding: professional
+    contracts: [cluster-orchestration, lego-assembly-workflow]
+    stage: []
+    description: "子Agent编排是否合规"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
+  context-budget-delegation-check:
+    script: context-budget-delegation-check.sh
+    mode: automated
+    scope: context compaction receipts
+    gate_binding: professional
+    contracts: [context-governance, context-compaction]
+    stage: []
+    description: "上下文预算委派是否正确"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
+  compaction-trigger-closure-check:
+    script: compaction-trigger-closure-check.sh
+    mode: automated
+    scope: compaction receipts, checkpoint
+    gate_binding: contract
+    contracts: [context-compaction, task-tracking]
+    stage: []
+    description: "压缩触发是否闭合"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
+  # === 新增 Checkers (7个) — 执行追溯闭环 ===
+  design-plan-bidirectional-ref-check:
+    script: design-plan-bidirectional-ref-check.sh
+    mode: automated
+    scope: design doc, dev plan
+    gate_binding: contract
+    contracts: [execution-traceability]
+    stage: [stage4, stage5]
+    description: "Design §14 STEP 与 Dev Plan 包的双向引用覆盖率 ≥95%"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: placeholder
+    fallback_manual_evidence: true
+    manual_evidence_template:
+      method: "人工检查 Design §14 每个 STEP 是否在 Dev Plan 中有对应包"
+      evidence_format: "双向引用矩阵 YAML"
+      minimum_requirement: "覆盖率 ≥95%，无 orphan STEP 和 orphan packet"
+
+  packet-size-check:
+    script: packet-size-check.sh
+    mode: automated
+    scope: code files, dev plan
+    gate_binding: professional
+    contracts: [execution-traceability, work-packet-governance]
+    stage: [stage6]
+    description: "每个包有效代码 ≤50 行或声明 oversized_justified"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: placeholder
+    fallback_manual_evidence: true
+    manual_evidence_template:
+      method: "人工统计每个包的有效代码行数，检查 oversized 声明完整性"
+      evidence_format: "包级行数统计表"
+      minimum_requirement: "所有包 ≤50 行或有完整的 oversized 声明"
+
+  code-packet-annotation-check:
+    script: code-packet-annotation-check.sh
+    mode: automated
+    scope: source code
+    gate_binding: professional
+    contracts: [execution-traceability]
+    stage: [stage6]
+    description: "每个代码文件头部有 @packet <id> 注释"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: placeholder
+    fallback_manual_evidence: true
+    manual_evidence_template:
+      method: "人工检查每个新增/修改代码文件头部是否有 @packet 注释"
+      evidence_format: "文件清单 + @packet 值"
+      minimum_requirement: "所有代码文件（排除 JSON/YAML/SQL）前 20 行内有 @packet"
+
+  orphan-code-detection:
+    script: orphan-code-detection.sh
+    mode: hybrid
+    scope: git diff, dev plan
+    gate_binding: professional
+    contracts: [execution-traceability]
+    stage: [stage6]
+    description: "git diff 中新增代码的每个 export 在 Dev Plan 中有对应包"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: placeholder
+    fallback_manual_evidence: true
+    manual_evidence_template:
+      method: "人工比对 git diff 中新增公开符号与 Dev Plan packet manifest"
+      evidence_format: "符号来源对照表"
+      minimum_requirement: "所有新增 export/def/func 都能找到对应包或标记为 glue code"
+
+  exception-path-coverage-check:
+    script: exception-path-coverage-check.sh
+    mode: manual
+    scope: source code, design doc
+    gate_binding: professional
+    contracts: [execution-traceability]
+    stage: [stage6]
+    description: "代码中的 try/catch/throw 在 Design §14 异常传播链中有定义"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: placeholder
+    fallback_manual_evidence: true
+    manual_evidence_template:
+      method: "按 §5.5 的 7 步执行步骤人工检查异常路径覆盖"
+      evidence_format: "异常路径覆盖报告"
+      minimum_requirement: "每个 try/catch/throw 在 §14.7 中有对应路径定义"
+
+  state-transition-coverage-check:
+    script: state-transition-coverage-check.sh
+    mode: manual
+    scope: source code, design doc
+    gate_binding: professional
+    contracts: [execution-traceability]
+    stage: [stage6]
+    description: "代码中的状态赋值在 Design 状态变更追踪中有定义"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: placeholder
+    fallback_manual_evidence: true
+    manual_evidence_template:
+      method: "按 §5.6 的 7 步执行步骤人工检查状态转换覆盖"
+      evidence_format: "状态转换覆盖报告"
+      minimum_requirement: "每个状态赋值在 Design 状态变更追踪中有来源"
+
+  assembly-interface-alignment-check:
+    script: assembly-interface-alignment-check.sh
+    mode: automated
+    scope: compiled code / type check
+    gate_binding: professional
+    contracts: [execution-traceability, lego-assembly-workflow]
+    stage: [stage6]
+    description: "拼装后的模块间接口类型/签名一致"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: placeholder
+    fallback_manual_evidence: true
+    manual_evidence_template:
+      method: "运行类型检查器（tsc/mypy/go build）并人工核对跨模块接口"
+      evidence_format: "类型检查报告 + 关键函数签名比对表"
+      minimum_requirement: "类型检查零错误，函数签名与 §14 伪代码一致"

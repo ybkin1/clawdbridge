@@ -1,0 +1,14 @@
+{
+  "name": "agent-orchestrator-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server bridging Trae IDE with Claude Code CLI for multi-agent parallel review",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

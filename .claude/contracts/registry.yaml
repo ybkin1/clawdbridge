@@ -1,0 +1,396 @@
+# 契约注册表（Contract Registry）
+
+> 追踪每个契约的状态和生效范围，驱动 intent-indexed activation。
+
+### effective_scope 语法
+
+- 列表形式 `[a, b]` 表示 AND 关系（必须同时满足列表中的所有条件）
+- `key=value` 表示精确匹配该字段值
+- `key=A|B` 表示匹配 key 等于 A 或 B（单个字段内的 OR 关系）
+- `all` 表示无条件全量生效
+- 裸字符串（如 `all tasks`、`all phases`）为领域限定符，表示匹配该领域下的所有值
+- 比较运算符（`>=`、`<=`）仅用于数值字段（如 `context_budget`）
+
+```yaml
+version: 2
+updated_at: "2026-05-11"
+
+# 契约版本号机制：
+# 每次契约内容变更时递增对应契约的 version 字段
+# 任务初始化时快照使用的契约版本到 task state 中
+# 如果任务运行期间契约被修改，以任务快照的版本为准，不采用新版本
+
+# 状态词汇
+# draft-ready: 可作候选参考，不得进入 active_contract_set
+# provisional: 限定 scope + opt-in 时作参考
+# active: 全量生效，自动加载到 active_contract_set
+
+contracts:
+  # === Meta ===
+  contract-schema:
+    version: 1
+    status: active
+    effective_scope: [all contracts]
+    depends_on: []
+    conflicts_with: []
+    description: "契约结构规范：统一元数据信封 + 10章节布局 + Checker/Narrative分离"
+    owner: "claude-code"
+    verification_mode: "automated"
+    checklist_refs: ["contract-completeness-checklist"]
+    checker_refs: ["contract-completeness-checklist"]
+
+  # === Core ===
+  intent-capture:
+    version: 1
+    status: active
+    effective_scope: [ownership_route, delivery_mode, task_chain_route]
+    depends_on: []
+    conflicts_with: []
+    description: "意图捕获：9字段 intent artifact"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: []
+    checker_refs: []
+
+  intent-routing:
+    version: 1
+    status: active
+    effective_scope: [all tasks]
+    depends_on: []
+    conflicts_with: []
+    description: "意图路由：用户请求 → action_family → 契约/工具/Skill 一键路由"
+    owner: "claude-code"
+    verification_mode: "automated"
+    checklist_refs: []
+    checker_refs: ["state-projection-alignment-check"]
+
+  task-routing:
+    version: 1
+    status: active
+    effective_scope: [ownership_route, delivery_mode, task_chain_route, workflow_route, execution_orchestration_route, review_requirement_route, escalation_route]
+    depends_on: [intent-capture]
+    conflicts_with: []
+    description: "任务路由：7步路由决策"
+    checklist_refs: []
+    checker_refs: []
+
+  action-governance:
+    version: 1
+    status: active
+    effective_scope: [action_family, artifact_kind]
+    depends_on: [task-routing, task-tracking]  # skill-tool-mapping removed: data consumer, not loading prerequisite
+    conflicts_with: []
+    description: "动作治理：先判动作再选工具"
+    checklist_refs: []
+    checker_refs: []
+
+  skill-tool-mapping:
+    version: 1
+    status: active
+    effective_scope: [action_family, artifact_kind]
+    depends_on: [task-routing]
+    conflicts_with: []
+    description: "技能与工具路由：意图识别→工具选择→安装态检查→调用决策→反模式禁止"
+    checklist_refs: []
+    checker_refs: []
+
+  context-governance:
+    version: 1
+    status: active
+    effective_scope: [action_family]
+    depends_on: [action-governance]
+    conflicts_with: []  # context-compaction 是 context-governance 预算阈值的执行机制，非真正冲突
+    description: "上下文治理：6层加载 + 信任画像 + 预算阈值"
+    checklist_refs: []
+    checker_refs: ["context-budget-delegation-check"]
+
+  task-tracking:
+    version: 1
+    status: active
+    effective_scope: [phase, subphase, phase_status, delivery_mode]
+    depends_on: [intent-capture, task-routing]
+    conflicts_with: []  # 状态机定义与 workflow 协同，非冲突
+    description: "任务跟踪：10阶段状态机 + 真相源 + 脏链路防止"
+    owner: "claude-code"
+    verification_mode: "automated"
+    checklist_refs: []
+    checker_refs: ["state-projection-alignment-check", "dangling-reference-check"]
+
+  # === Build ===
+  lego-assembly-workflow:
+    version: 2
+    status: active
+    effective_scope: [delivery_mode=full, phase=build, action_family=implementation]
+    depends_on: [cluster-orchestration, work-packet-governance, task-tracking, skill-tool-mapping]
+    conflicts_with: []
+    description: "乐高拼装工作流：从架构到代码块的多级拆装→Agent集群制造→逐级拼装→异常恢复。v2 新增 L4 函数级详设强制章节 §14-§18"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: ["stage4-design-review", "stage5-plan-review", "stage6-coding-review"]
+    checker_refs: ["assembly-interface-alignment-check"]
+
+  work-packet-governance:
+    version: 2
+    status: active
+    effective_scope: [delivery_mode=full, phase=build]
+    depends_on: [task-tracking]  # architecture-blueprint removed: work packets decompose from architecture nodes but don't require the contract itself to be loaded
+    conflicts_with: []
+    description: "工作包治理：12层搭积木拆包 + L4 函数级包约束 + oversized_justified 申报。v2 新增函数级拆包和包大小检查"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: ["stage5-plan-review"]
+    checker_refs: ["packet-size-check"]
+
+  architecture-blueprint:
+    version: 1
+    status: active
+    effective_scope: [delivery_mode=full, phase=design|plan|build]
+    depends_on: [task-tracking]  # lego-assembly-workflow removed: breaks circular dependency. architecture-blueprint defines structure first; lego-assembly consumes it via data reference, not loading prerequisite
+    conflicts_with: []
+    description: "架构蓝图：从大局到细节的拼装顺序"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: ["stage2-architecture-review", "stage4-design-review"]
+    checker_refs: []
+
+  # === Review ===
+  review-gates:
+    version: 1
+    status: active
+    effective_scope: [phase, action_family=review]
+    depends_on: [task-tracking, intent-capture]
+    conflicts_with: [exception-governance]  # 异常治理不可豁免 formal review（反向声明）
+    description: "评审门控：value→professional→contract 三层"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: ["stage1-learning-review", "stage2-architecture-review", "stage3-prd-review", "stage4-design-review", "stage5-plan-review", "stage6-coding-review", "stage7-test-review"]
+    checker_refs: ["review-consistency-check"]
+
+  review-consistency-checklist:
+    version: 1
+    status: active
+    effective_scope: [phase, action_family=review]
+    depends_on: [review-gates, task-tracking]
+    conflicts_with: []
+    description: "审查一致性：12项自动化检查"
+    owner: "claude-code"
+    verification_mode: "automated"
+    checklist_refs: []
+    checker_refs: ["review-consistency-check"]
+
+  # === Governance ===
+  memory-architecture:
+    version: 1
+    status: active
+    effective_scope: [all]
+    depends_on: []
+    conflicts_with: []
+    description: "记忆架构：4层 + 6类对象 + 8目的地分流 + 晋升链 + 衰减"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: []
+    checker_refs: []
+
+  verification-checker:
+    version: 1
+    status: active
+    effective_scope: [phase=verify|acceptance, action_family=verification]
+    depends_on: [review-gates]
+    conflicts_with: []
+    description: "验证检查器：checker catalog + 结果形状"
+    owner: "claude-code"
+    verification_mode: "automated"
+    checklist_refs: []
+    checker_refs: []
+
+  exception-governance:
+    version: 1
+    status: active
+    effective_scope: [all]
+    depends_on: []
+    conflicts_with: [review-gates]  # 不可豁免 formal review
+    description: "异常治理：5类异常 + 不可豁免规则"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: []
+    checker_refs: []
+
+  closeout:
+    version: 1
+    status: active
+    effective_scope: [phase=release-ready, action_family=closeout]
+    depends_on: [review-gates, task-readme-lifecycle]
+    conflicts_with: []
+    description: "收口契约：4类收口 + 前置条件"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: ["release-checklist"]
+    checker_refs: []
+
+  task-readme-lifecycle:
+    version: 1
+    status: active
+    effective_scope: [delivery_mode=full, phase=research|spec|design|build|verify]
+    depends_on: [task-tracking]
+    conflicts_with: []
+    description: "README生命周期：开发态/交付态"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: []
+    checker_refs: []
+
+  # === Quality ===
+  document-depth:
+    version: 2
+    status: active
+    effective_scope: [action_family=authoring, artifact_kind=prd|design-spec|contract]
+    depends_on: [review-gates]
+    conflicts_with: []
+    description: "文档深度：深度/密级/成熟度。v2 新增 implementation_blueprint L4 函数级强制要求"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: ["stage4-design-review"]
+    checker_refs: []
+
+  engineering-standards:
+    version: 1
+    status: provisional
+    effective_scope: [action_family=implementation|verification, delivery_mode=full]
+    depends_on: [task-routing, action-governance]
+    conflicts_with: []
+    description: "工程标准：治理接线"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: ["tech-review-checklist", "code-review-checklist"]
+    checker_refs: []
+
+  cluster-orchestration:
+    version: 1
+    status: provisional
+    effective_scope: [execution_orchestration_route=mandatory_multi_agent|recommended_multi_agent]
+    depends_on: [task-tracking, work-packet-governance]
+    conflicts_with: []
+    description: "多Agent集群：manifest + fan-in"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: []
+    checker_refs: ["subagent-orchestration-check"]
+
+  # === Workflow ===
+  task-tracking-workflow:
+    version: 1
+    status: active
+    effective_scope: [delivery_mode=full|quick, all phases]
+    depends_on: [task-tracking, task-routing]
+    conflicts_with: []
+    description: "任务跟踪流程：初始化→phase推进→评审循环→closeout全链路"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: []
+    checker_refs: []
+
+  task-directory-tree:
+    version: 2
+    status: active
+    effective_scope: [all tasks]
+    depends_on: [task-tracking]
+    conflicts_with: []
+    description: "任务目录树：标准目录结构、真相源/派生分类、创建/清理时机、四要素工件命名"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: []
+    checker_refs: []
+
+  file-naming:
+    version: 3
+    status: active
+    effective_scope: [all files]
+    depends_on: []
+    conflicts_with: []
+    description: "文件命名：小写+连字符、00-前缀真相源、project-slug+type+task-id+iteration 四要素工件命名"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: []
+    checker_refs: []
+
+  context-compaction:
+    version: 1
+    status: active
+    effective_scope: [all tasks, context_budget >= 55%]
+    depends_on: [context-governance]
+    conflicts_with: []
+    description: "上下文压缩：55/70/85三级梯度 + 保留/压缩/丢弃策略 + receipt"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: []
+    checker_refs: ["compaction-trigger-closure-check"]
+
+  # === Quality Assurance ===
+  scenario-traceability:
+    version: 3
+    status: active
+    effective_scope: [phase=build|verify, action_family=verification]
+    depends_on: [task-tracking, review-gates]
+    conflicts_with: []
+    description: "场景追溯评审：需求来源→场景路径→代码→测试的追溯矩阵，按用户场景逐项走读代码发现真实问题。v3 新增分支基线/无PRD路径/场景复用/平台扩展矩阵/问题类型扩展/真实性校验/Value Gate桥接"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: ["stage6-coding-review", "cross-level-review-checklist"]
+    checker_refs: []
+
+  completeness-audit:
+    version: 1
+    status: active
+    effective_scope: [all Standard/Complex tasks, any source material adaptation]
+    depends_on: [document-depth]
+    conflicts_with: []
+    description: "完整性审计：3道防线(对标+成熟度+Self-Audit) — 防止摘要式压缩和交付物过薄"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: ["completeness-audit"]
+    checker_refs: []
+
+  dirty-hygiene:
+    version: 1
+    status: active
+    effective_scope: [all tasks, all write operations, phase transitions, closeout]
+    depends_on: [task-tracking, context-compaction]
+    conflicts_with: []
+    description: "脏数据/脏链路卫生：Write-or-Fail-or-Explicit规则 + 状态机 + 检测触发 + 回收动作"
+    owner: "claude-code"
+    verification_mode: "automated"
+    checklist_refs: []
+    checker_refs: ["dirty-hygiene-closure-check", "dirty-chain-prevention-check", "stale-projection-cleanup-check"]
+
+  storage-location:
+    version: 1
+    status: active
+    effective_scope: [all tasks, all write operations]
+    depends_on: [task-directory-tree, file-naming]
+    conflicts_with: []
+    description: "存储位置：禁止C盘写入 + 允许/禁止位置列表 + 违规处理"
+    owner: "claude-code"
+    verification_mode: "manual"
+    checklist_refs: []
+    checker_refs: []
+
+  # === Execution Traceability (新增) ===
+  execution-traceability:
+    version: 1
+    status: active
+    effective_scope: [delivery_mode=full, phase=design|plan|build, action_family=implementation|verification]
+    depends_on: [lego-assembly-workflow, work-packet-governance, document-depth, verification-checker]
+    conflicts_with: []
+    description: "执行追溯契约：Design-Plan-Code 三层追溯链、双向引用矩阵、包级即时评审、拼装级评审、审计检查器"
+    owner: "claude-code"
+    verification_mode: "hybrid"
+    checklist_refs: ["stage4-design-review", "stage5-plan-review", "stage6-coding-review"]
+    checker_refs:
+      - "design-plan-bidirectional-ref-check"
+      - "packet-size-check"
+      - "code-packet-annotation-check"
+      - "orphan-code-detection"
+      - "exception-path-coverage-check"
+      - "state-transition-coverage-check"
+      - "assembly-interface-alignment-check"
+```

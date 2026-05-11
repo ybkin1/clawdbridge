@@ -1,0 +1,8 @@
+task_id: tk-20260509-001
+ownership_route: "product"
+delivery_mode: "full"
+workflow_route: "research"
+execution_orchestration_route: "sequential_single"
+review_requirement_route: "full_gate"
+escalation_route: "standard_3_round"
+routed_at: "2026-05-09"

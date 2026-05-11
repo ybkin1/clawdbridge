@@ -1,0 +1,25 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+    "ANTHROPIC_AUTH_TOKEN": "sk-kimi-1fMCd92ZSkBtkvFDaEYx6CJDsLvGpgynAgfm6prmMmHnwhSDI3usIMEtkYyKfa2U",
+    "ANTHROPIC_MODEL": "kimi-k2.6",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "kimi-k2.6",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-k2.6",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "kimi-k2.6"
+  },
+  "includeCoAuthoredBy": false,
+  "hooks": {
+    "SessionStart": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 SessionStart"}]},{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 SessionStart"}]}],
+    "SessionEnd": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 SessionEnd"}]}],
+    "UserPromptSubmit": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 UserPromptSubmit"}]}],
+    "PreToolUse": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 PreToolUse"}]}],
+    "PostToolUse": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 PostToolUse"}]}],
+    "PostToolUseFailure": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 PostToolUseFailure"}]}],
+    "Stop": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 Stop"}]}],
+    "SubagentStart": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 SubagentStart"}]}],
+    "SubagentStop": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 SubagentStop"}]}],
+    "Notification": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 Notification"}]}],
+    "Elicitation": [{"matcher":"","hooks":[{"type":"command","shell":"powershell","command":"powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\clawd-on-desk-main\\hooks\\clawd-node-wrapper.ps1 Elicitation"}]}],
+    "PermissionRequest": [{"matcher":"","hooks":[{"type":"http","url":"http://127.0.0.1:23333/permission","timeout":600}]}]
+  }
+}

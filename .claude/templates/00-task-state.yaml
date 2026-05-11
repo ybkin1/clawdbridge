@@ -1,0 +1,49 @@
+# 00-task-state.yaml — 模板
+
+# 每次任务开始时从本模板复制到 .claude/tasks/<task-id>/00-task-state.yaml
+# 并填充实际值
+
+task_id: tk-YYYYMMDD-NNN
+title: ""
+delivery_mode: full  # full | quick | advisory
+phase: clarify       # clarify → research → architecture-decomposition → spec → design → plan → build → verify → acceptance → release-ready
+subphase: authoring  # authoring | reviewing | revising | blocked | syncing
+phase_status: in_progress  # not_started | in_progress | in_review | passed | failed | blocked | archived
+
+# 当前主产出文件的绝对路径或相对路径
+current_primary_artifact: ""
+
+# 当前 gate bundle ID
+current_gate_bundle: ""
+
+# Gate 结果
+gate_results: {}
+
+# 是否允许收口
+closeout_allowed: false
+
+# 最新评审报告路径
+last_review_report: ""
+
+# 最新阻塞报告路径
+last_blocker_report: ""
+
+# 路由投影引用
+route_projection_ref: ""
+
+# 架构蓝图引用
+architecture_blueprint_ref: ""
+architecture_blueprint_status: not_required  # not_required | required_pending | drafted | reviewed | approved
+
+# 上下文预算
+context_budget_percent_estimate: 0
+
+# README 要求
+readme_requirement:
+  status: required  # required | exempt
+  reason: ""
+  recorded_at: ""
+  decided_by: ""
+
+# 最后更新时间
+updated_at: ""

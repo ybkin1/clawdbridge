@@ -1,0 +1,25 @@
+rubric:
+  professional_gate:
+    checks:
+      - id: "arch-alignment"
+        description: "方案是否从架构蓝图拆出，模块边界与架构一致"
+      - id: "module-path-clear"
+        description: "每个模块的实现路径是否清晰"
+      - id: "data-flow-defined"
+        description: "是否有明确的数据流和状态流"
+      - id: "failure-paths"
+        description: "失败/回滚/降级路径是否设计"
+      - id: "maintainability"
+        description: "日志/审计/监控/回滚/降级/故障恢复是否覆盖"
+  contract_gate:
+    checks:
+      - id: "file-naming"
+        description: "文件命名符合规范"
+      - id: "directory-tree"
+        description: "目录结构合规"
+      - id: "document-depth"
+        description: "design 文档声明 depth 和 maturity"
+      - id: "no-hardcoded"
+        description: "无硬编码密钥"
+      - id: "state-alignment"
+        description: "state 与 artifact 一致"

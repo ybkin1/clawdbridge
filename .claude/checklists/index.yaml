@@ -1,0 +1,135 @@
+# Checklist 索引（Checklist Registry Index）
+# Purpose: 建立契约 → checklist → Stage 的纵向映射
+# Updated: 2026-05-11
+
+version: 1
+updated_at: "2026-05-11"
+
+checklists:
+  # === Stage Gate Checklists ===
+  stage1-learning-review:
+    file: stage1-learning-review.md
+    stage: stage1
+    gate: professional
+    contracts: [context-governance]
+    description: "深度学习评审"
+
+  stage2-architecture-review:
+    file: stage2-architecture-review.md
+    stage: stage2
+    gate: professional
+    contracts: [architecture-blueprint]
+    description: "架构拆解评审"
+
+  stage3-prd-review:
+    file: stage3-prd-review.md
+    stage: stage3
+    gate: value
+    contracts: [document-depth]
+    description: "PRD 评审"
+
+  stage4-design-review:
+    file: stage4-design-review.md
+    stage: stage4
+    gate: professional
+    contracts: [architecture-blueprint, document-depth, execution-traceability]
+    description: "方案详设评审（含函数级设计完整性、复用设计、通信协议设计）"
+
+  stage5-plan-review:
+    file: stage5-plan-review.md
+    stage: stage5
+    gate: professional
+    contracts: [work-packet-governance, execution-traceability]
+    description: "开发计划评审（含双向追溯、包级约束、合入计划）"
+
+  stage6-coding-review:
+    file: stage6-coding-review.md
+    stage: stage6
+    gate: professional
+    contracts: [scenario-traceability, execution-traceability]
+    description: "编码评审（含代码溯源、包验收、拼装验证）"
+
+  stage7-test-review:
+    file: stage7-test-review.md
+    stage: stage7
+    gate: value
+    contracts: [verification-checker]
+    description: "测试验收评审"
+
+  # === Supplementary Checklists ===
+  user-value-checklist:
+    file: user-value-checklist.md
+    stage: [stage3, stage7]
+    gate: value
+    contracts: [intent-capture]
+    description: "用户价值验证"
+
+  contract-completeness-checklist:
+    file: contract-completeness-checklist.md
+    stage: []
+    gate: contract
+    contracts: [contract-schema]
+    description: "契约结构完整性"
+
+  completeness-audit:
+    file: completeness-audit.md
+    stage: []
+    gate: contract
+    contracts: [completeness-audit]
+    description: "完整性审计三道防线"
+
+  code-review-checklist:
+    file: code-review-checklist.md
+    stage: stage6
+    gate: professional
+    contracts: [engineering-standards]
+    description: "代码审查补充清单"
+
+  cross-level-review-checklist:
+    file: cross-level-review-checklist.md
+    stage: stage6
+    gate: professional
+    contracts: [scenario-traceability]
+    description: "跨层级走读评审"
+
+  interface-review:
+    file: interface-review.md
+    stage: [stage4, stage5]
+    gate: professional
+    contracts: [architecture-blueprint]
+    description: "接口评审"
+
+  plan-review-checklist:
+    file: plan-review-checklist.md
+    stage: stage5
+    gate: professional
+    contracts: [work-packet-governance]
+    description: "计划评审补充"
+
+  product-review-checklist:
+    file: product-review-checklist.md
+    stage: stage3
+    gate: value
+    contracts: [document-depth]
+    description: "产品评审"
+
+  release-checklist:
+    file: release-checklist.md
+    stage: stage7
+    gate: value
+    contracts: [closeout]
+    description: "发布前检查"
+
+  tech-review-checklist:
+    file: tech-review-checklist.md
+    stage: stage4
+    gate: professional
+    contracts: [engineering-standards]
+    description: "技术评审"
+
+  test-review-checklist:
+    file: test-review-checklist.md
+    stage: stage7
+    gate: value
+    contracts: [verification-checker]
+    description: "测试评审"

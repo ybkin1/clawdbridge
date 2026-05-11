@@ -1,0 +1,30 @@
+review_rubric:
+  task_id: tk-20260511-001
+  bundle_id: rb-contract-review-001
+  gate_type: contract  # 本次评审为契约修改的元评审
+
+  dimensions:
+    - name: "注册表完整性"
+      checklist: contract-completeness-checklist §1
+      weight: high
+    - name: "契约结构合规性"
+      checklist: contract-completeness-checklist §2
+      weight: high
+    - name: "契约间依赖闭合"
+      checklist: contract-completeness-checklist §3
+      weight: high
+    - name: "规范执行面验证"
+      checklist: contract-completeness-checklist §5
+      weight: high
+    - name: "交叉引用一致性"
+      checklist: contract-completeness-checklist §6
+      weight: medium
+    - name: "变更影响面"
+      checklist: contract-completeness-checklist §7
+      weight: medium
+    - name: "三层门控可执行性"
+      checklist: review-gates-contract
+      weight: high
+    - name: "Stage 清单覆盖度"
+      checklist: stage4/5/6 checklists
+      weight: high

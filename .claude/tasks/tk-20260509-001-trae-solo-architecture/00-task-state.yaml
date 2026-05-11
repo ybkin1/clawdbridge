@@ -1,0 +1,27 @@
+task_id: tk-20260509-001
+action_family: plan
+title: "ClawdBridge Mobile — Design §14 函数级补充 + Dev Plan @ref 映射完成"
+delivery_mode: full
+
+phase: plan
+subphase: authored
+phase_status: in_progress
+status: in_progress
+
+current_primary_artifact: "artifacts/clawdbridge-dev-plan-tk-20260509-001-v3.md"
+
+gate_results:
+  spec:
+    rb-prd-v3: { score: 94, verdict: passed }
+  design:
+    rb-design-v3: { score: 100, verdict: passed, total_findings_resolved: 40, rounds: 5 }
+    section_14: { status: added, flows: 6, di_table: 1, exception_map: 1 }
+  plan:
+    dev-plan-v3-l5: { status: updated, packets: 87, ref_mapping_87: complete }
+  build:
+    sprint-1-bridge: { result: "13 files + 113 tests ✅" }
+    sprint-2-mobile: { result: "23 files + 22 tests ✅" }
+    sprint-3-e2e: { result: "IP01 E2E + IP02 审批 + 真实 Claude CLI ✅" }
+
+closeout_allowed: false
+updated_at: "2026-05-10T17:00:00+08:00"

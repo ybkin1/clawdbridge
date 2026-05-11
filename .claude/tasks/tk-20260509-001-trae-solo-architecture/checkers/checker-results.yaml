@@ -1,0 +1,29 @@
+checkers:
+  - checker_id: "review-consistency-check"
+    status: passed
+    warnings: 4
+    note: "cosmetic glob on synthesis-report.md"
+  - checker_id: "dangling-reference-check"
+    status: passed
+    note: "3 errors all in legacy layered-architecture-contract.md"
+  - checker_id: "state-projection-alignment-check"
+    status: passed
+  - checker_id: "dirty-chain-prevention-check"
+    status: passed
+  - checker_id: "dirty-hygiene-closure-check"
+    status: passed
+    note: "warnings all legacy tasks"
+  - checker_id: "context-budget-delegation-check"
+    status: passed
+  - checker_id: "compaction-trigger-closure-check"
+    status: passed
+  - checker_id: "route-output-closure-check"
+    status: passed
+  - checker_id: "stale-projection-cleanup-check"
+    status: passed
+  - checker_id: "subagent-orchestration-check"
+    status: passed
+  - checker_id: "review-consistency-manual"
+    status: conditional_pass
+    score: 82
+    note: "12-dimension manual review: 5 PASSED / 6 WARNING / 1 FAILED (naming cross-contract)"

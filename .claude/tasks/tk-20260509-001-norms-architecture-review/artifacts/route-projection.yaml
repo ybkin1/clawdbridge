@@ -1,0 +1,28 @@
+task_id: tk-20260509-001
+ownership_route: codex-self
+delivery_mode: full
+task_chain_route: self_improvement
+workflow_route: research
+execution_orchestration_route: single_packet_direct
+review_requirement_route: self_review_allowed
+escalation_route: normal
+intent_route:
+  action_family: research
+  artifact_kind: report
+  required_contracts:
+    - task-tracking
+    - document-depth
+  required_skills: []
+  verification_checks:
+    - completeness-mapping-table
+    - maturity-gate-word-count
+tool_routing:
+  available_tools:
+    - Read
+    - Grep
+    - Glob
+    - Bash
+    - Write
+negative_activation: []
+routed_at: "2026-05-09T15:26:00Z"
+routed_by: claude-code

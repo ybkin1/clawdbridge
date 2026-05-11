@@ -1,0 +1,16 @@
+hard_fail_rules:
+  - rule: "no-module-implementation-path"
+    description: "设计中有模块但实现路径不清晰"
+    severity: blocker
+  - rule: "no-failure-handling"
+    description: "缺少异常处理/降级/恢复设计"
+    severity: blocker
+  - rule: "naming-violation"
+    description: "文件命名违反规范"
+    severity: blocker
+  - rule: "hardcoded-secret"
+    description: "硬编码密钥/密码"
+    severity: blocker
+  - rule: "no-depth-declaration"
+    description: "design 文档缺少 document_class/depth_profile/maturity_target"
+    severity: critical

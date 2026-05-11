@@ -1,0 +1,39 @@
+rubric:
+  completeness:
+    weight: 25
+    checks:
+      - id: "user-goals-covered"
+        description: "是否覆盖用户真实目标和真实使用场景"
+      - id: "no-assumption-only-path"
+        description: "是否避免只按作者假设路径设计"
+      - id: "success-criteria-defined"
+        description: "是否有明确的成功标准和验收条件"
+      - id: "out-of-scope-defined"
+        description: "是否有明确的非目标（out of scope）"
+  traceability:
+    weight: 25
+    checks:
+      - id: "feature-to-intent"
+        description: "每个功能是否能追溯到 intent"
+      - id: "acceptance-per-feature"
+        description: "每个功能是否有对应的验收标准"
+      - id: "dependency-clarity"
+        description: "需求之间的依赖关系是否明确"
+  feasibility:
+    weight: 25
+    checks:
+      - id: "tech-feasible"
+        description: "技术方案是否可行"
+      - id: "unresolved-risks"
+        description: "是否有未解决的技术风险"
+      - id: "external-deps-confirmed"
+        description: "是否有外部依赖未确认"
+  depth:
+    weight: 25
+    checks:
+      - id: "whitepaper-depth"
+        description: "theme_prd 是否达到 whitepaper_like 深度"
+      - id: "module-boundaries"
+        description: "是否定义模块边界、关键对象、接口/依赖关系和失败路径"
+      - id: "maturity-match"
+        description: "maturity_target 是否与实际深度匹配"

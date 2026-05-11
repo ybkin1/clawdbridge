@@ -1,0 +1,12 @@
+hard_fail_rules:
+  - rule: "intent-not-satisfied"
+    description: "PRD 未覆盖 00-user-intent.md 中的任何一条原始需求"
+    severity: blocker
+
+  - rule: "core-scenario-missing"
+    description: "用户的核心场景（远程审批/任务跟进）无对应功能需求覆盖"
+    severity: blocker
+
+  - rule: "key-pain-unaddressed"
+    description: "原始需求中"不想用 Trae Solo 因为不支持 Claude Code"这一核心痛点未被直接解决"
+    severity: blocker

@@ -1,0 +1,24 @@
+task_id: tk-20260509-002
+title: "规范架构适配与缺失技能安装"
+delivery_mode: full
+action_family: implementation
+phase: closeout
+subphase: done
+phase_status: done
+current_primary_artifact: ".claude/tasks/tk-20260509-002-norms-adaptation/README.md"
+current_gate_bundle: ""
+gate_results:
+  self_review: passed
+closeout_allowed: true
+last_review_report: ""
+last_blocker_report: ""
+route_projection_ref: ".claude/tasks/tk-20260509-002-norms-adaptation/artifacts/route-projection.yaml"
+architecture_blueprint_ref: ""
+architecture_blueprint_status: not_required
+context_budget_percent_estimate: 25
+readme_requirement:
+  status: fulfilled
+  reason: "README.md 已按交付态编写"
+  recorded_at: "2026-05-09T00:00:00Z"
+  decided_by: "claude-code"
+updated_at: "2026-05-09T00:00:00Z"

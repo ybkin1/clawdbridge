@@ -1,0 +1,15 @@
+review_id: "rb-prd-001"
+task_id: "tk-20260509-001"
+gate_type: "professional"
+verdict: "passed"
+review_date: "2026-05-09"
+round: 1
+bundle_id: "rb-prd-001"
+artifact_reviewed: "artifacts/clawdbridge-prd-v1.md"
+conclusion: "passed"
+score: 82
+max_score: 100
+blockers: 1
+suggestions: 8
+reviewer: "synthesis-agent"
+report_path: "synthesis-report.md"

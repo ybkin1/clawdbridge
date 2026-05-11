@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+    image: clawdbridge-builder:latest
+    container_name: clawdbridge-apk-builder
+    environment:
+      - JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+      - ANDROID_HOME=/opt/android-sdk
+    volumes:
+      - ./build-output:/output
+      - gradle-cache:/root/.gradle
+      - npm-cache:/root/.npm
+    command: >
+      sh -c "
+        cp /output/clawdbridge.apk /output/clawdbridge-$$(date +%Y%m%d-%H%M%S).apk 2>/dev/null || true &&
+        echo '构建完成，APK 位于 ./build-output/ 目录'
+      "
+
+volumes:
+  gradle-cache:
+  npm-cache:

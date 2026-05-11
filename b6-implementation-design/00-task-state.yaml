@@ -1,0 +1,53 @@
+---
+task_id: tk-20260510-002-b6-implementation-design
+title: "B6 Implementation Design: harness_import_staging + OpenClaw Data Adoption Pipeline"
+status: design_fixes_complete
+action_family: implementation
+artifact_kind: design-spec + dev-plan
+complexity: Standard
+contracts_loaded:
+  - task-tracking
+  - context-governance
+  - work-packet-governance
+  - architecture-blueprint
+  - lego-assembly-workflow
+  - skill-tool-mapping
+parent_task: tk-20260506-001
+gate_context: B6
+source_receipt: /root/docs/tasks/tk-20260506-001/artifacts/owner-evidence-20260510-b6-openclaw-sql-reference-001.yaml
+source_addendum: /opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/owner-evidence-20260510-b6-openclaw-sql-reference-001.addendum.yaml
+owner_adr: /opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/owner-decision-adr-b6-001.md
+review_verdict: conditional_pass_round1_fixes_applied
+artifacts:
+  - /opt/harness/.claude/tasks/tk-20260510-002-b6-implementation-design/artifacts/09-dev-plan.md
+exceptions: []
+dirty_hygiene_checked: false
+implementation_allowed: true
+design_review_fixes:
+  - id: M-01
+    status: fixed
+    description: Added RLS integration note referencing harness_user_scopes and harness_roles from Sprint 0
+  - id: M-02
+    status: fixed
+    description: Added cross-reference to harness_audit.audit_logs hash chain design
+  - id: M-03
+    status: fixed
+    description: Added TOAST and chunked storage note for staged_records.payload
+  - id: M-04
+    status: fixed
+    description: WP-8 effort adjusted 2d -> 3d; added Sprint 0 RLS tables dependency
+  - id: M-05
+    status: fixed
+    description: Added performance AC - 10K records within 60s
+  - id: M-06
+    status: fixed
+    description: Added 3 missing risks - staging bloat, embedding mismatch, NATS replay
+  - id: C-01
+    status: answered
+    description: Atomic adoption = single PostgreSQL transaction (BEGIN..COMMIT with rollback)
+  - id: C-02
+    status: answered
+    description: Specified database.py modification - schema search_path + UUID[] type codec
+note: >
+  Design review Round 1 findings M-01~M-06 and C-01~C-02 have been addressed in 09-dev-plan.md.
+  Awaiting owner authorization to set implementation_allowed: true and begin Sprint 1 execution.

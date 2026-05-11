@@ -1,0 +1,22 @@
+hard_fail_rules:
+  - rule: "契约文件缺失 required_contracts 中的契约"
+    severity: critical
+    source: contract-completeness-checklist §3
+  - rule: "registry.yaml 中 status=active 但文件不存在"
+    severity: critical
+    source: contract-completeness-checklist §1
+  - rule: "契约 front matter 缺少 contract-schema 要求的 13 个 metadata 字段"
+    severity: critical
+    source: contract-completeness-checklist §2
+  - rule: "契约正文缺少 10 个语义章节中的必需章节"
+    severity: major
+    source: contract-completeness-checklist §2
+  - rule: "规则声明无执行机制（不可验证）"
+    severity: major
+    source: contract-completeness-checklist §5
+  - rule: "Stage checklist 新增检查项与 execution-traceability 契约要求不匹配"
+    severity: major
+    source: execution-traceability §4
+  - rule: "checkers/index.yaml 中声明的 checker 无对应脚本文件"
+    severity: major
+    source: execution-traceability §5

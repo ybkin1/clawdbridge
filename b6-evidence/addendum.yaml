@@ -1,0 +1,102 @@
+---
+receipt_id: owner-evidence-20260510-b6-openclaw-sql-reference-001-addendum
+target_gate: B6
+base_receipt_ref: /root/docs/tasks/tk-20260506-001/artifacts/owner-evidence-20260510-b6-openclaw-sql-reference-001.yaml
+submitted_by: remote-claude-code-readonly-pre-gate
+submitted_at: "2026-05-10T14:30:00+08:00"
+owner_decision_ref: null
+
+evidence_gap_closure:
+  status: partial
+  notes:
+    - "Created docs-only evidence package for B6 owner evidence gaps"
+    - "All evidence is read-only; no product code or formal database touched"
+
+evidence_produced:
+  - artifact: "01-staging-ddl-draft.md"
+    path: "/opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/01-staging-ddl-draft.md"
+    description: "Import staging schema draft (harness_import_staging: import_batches, staged_records, adoption_audit_log, reverse_index)"
+    status: present
+  - artifact: "02-export-bundle-schema.yaml"
+    path: "/opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/02-export-bundle-schema.yaml"
+    description: "OpenClaw export bundle schema with column descriptors, validation rules, and mapping gaps"
+    status: present
+  - artifact: "03-dry-run-validation-plan.md"
+    path: "/opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/03-dry-run-validation-plan.md"
+    description: "Dry-run validation rules, report format, failure handling, and read-only command examples"
+    status: present
+  - artifact: "04-adoption-state-machine.md"
+    path: "/opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/04-adoption-state-machine.md"
+    description: "Staged -> Validated -> Approved -> Adopted -> Retracted state machine with transitions and guardrails"
+    status: present
+  - artifact: "05-reverse-index-and-lineage.md"
+    path: "/opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/05-reverse-index-and-lineage.md"
+    description: "Reverse index contract, query patterns, lineage chain, and retraction lineage preservation"
+    status: present
+  - artifact: "06-rollback-retract-contract.md"
+    path: "/opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/06-rollback-retract-contract.md"
+    description: "Rollback (pre-commit) and Retract (post-commit) contract with input, validation, execution, output, and recovery rules"
+    status: present
+  - artifact: "07-rbac-rls-security-test-plan.md"
+    path: "/opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/07-rbac-rls-security-test-plan.md"
+    description: "RBAC matrix, RLS policy drafts, 6 security test cases (Gherkin), and compliance mapping"
+    status: present
+  - artifact: "08-owner-decision-request.md"
+    path: "/opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/08-owner-decision-request.md"
+    description: "7 owner decision items (adoption scope, embedding dimension, tenant assignment, retention, retraction permission, fault dictionary completeness, devices reconciliation)"
+    status: present
+  - artifact: "README.md"
+    path: "/opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/README.md"
+    description: "Package index and verification commands"
+    status: present
+
+evidence_still_missing:
+  - item: "owner_decision_ref"
+    reason: "No Harness owner has provided approval or ADR for OpenClaw data adoption"
+    blocking: true
+  - item: "staging_ddl_executed"
+    reason: "Staging DDL is docs-only draft; not executed as formal migration"
+    blocking: false
+  - item: "dry_run_executed_with_real_data"
+    reason: "Dry-run plan exists but no real OpenClaw export bundle has been imported and validated"
+    blocking: false
+  - item: "rbac_rls_security_tests_executed"
+    reason: "Test plan exists but no CI/staging execution evidence"
+    blocking: false
+  - item: "adoption_state_machine_implemented"
+    reason: "State machine design exists but no code implementation in harness"
+    blocking: false
+  - item: "reverse_index_query_performance_tested"
+    reason: "Index schema exists but no query plan or performance evidence"
+    blocking: false
+
+intake_status: incomplete
+triage_verdict: incomplete
+triage_notes:
+  - "B6 evidence gap closure package created successfully"
+  - "All required evidence artifacts are present as docs-only designs"
+  - "Owner decision is still missing (D-01 through D-07 unanswered)"
+  - "No formal database tables written"
+  - "No /opt/harness/src/modules/ files modified"
+  - "No /opt/harness/sql/ formal migrations created"
+  - "Receipt remains incomplete pending owner decision and evidence execution"
+
+implementation_allowed: false
+remote_product_code_write_allowed: false
+formal_database_write_allowed: false
+pass_does_not_mean_implementation_ready: true
+
+gate_status: blocked
+gates_ready_for_rehearing: []
+
+product_code_verification:
+  src_modules_file_count: 5
+  sql_file_count: 13
+  git_status: "docs/ only"
+  product_code_untouched: true
+
+amended_by:
+  - agent: remote-claude-code
+    action: b6_owner_evidence_gap_closure_package_creation
+    at: "2026-05-10T14:30:00+08:00"
+    note: "Created 9 evidence documents and this addendum; no product code or database writes"
