@@ -134,11 +134,16 @@ export async function checkPhaseReadiness(args = {}) {
   for (const c of mandatory) {
     const cid = String(c).trim();
     if (!cid) continue;
-    const exists =
+    const resultFile =
       fs.existsSync(checkerDir) &&
-      fs.readdirSync(checkerDir).some((f) => f.includes(cid));
-    if (!exists) {
+      fs.readdirSync(checkerDir).find((f) => f.includes(cid) && f.endsWith(".yaml") && !f.startsWith("evidence-lock"));
+    if (!resultFile) {
       gaps.push(`Mandatory checker not run: ${cid}`);
+      continue;
+    }
+    const resultDoc = loadYaml(path.join(checkerDir, resultFile));
+    if (resultDoc?.status === "failed") {
+      gaps.push(`Mandatory checker failed: ${cid} (${resultFile})`);
     }
   }
 
