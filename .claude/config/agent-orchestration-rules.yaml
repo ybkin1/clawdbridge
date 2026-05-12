@@ -1,0 +1,32 @@
+# agent-orchestration-rules.yaml — Agent 集群编排规则
+#
+# 来源：cluster-orchestration.md + work-packet-governance.md
+# 消费方：MCP agent_orchestrator, agent_status
+
+version: 1
+updated_at: "2026-05-13"
+
+rules:
+  max_description_words: 15
+  max_input_params: 5
+  max_lines: 50
+  require_target_file: true
+  require_acceptance: true
+
+orchestration_decisions:
+  valid:
+    - multi_packet_parallel
+    - single_packet_direct
+    - single_thread_exception
+
+agent_roles:
+  - orchestrator_prime
+  - sub_orchestrator
+  - worker
+
+status_lifecycle:
+  - pending
+  - running
+  - completed
+  - failed
+  - timeout

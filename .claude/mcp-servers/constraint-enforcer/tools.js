@@ -144,4 +144,93 @@ export const toolDefinitions = [
       required: [],
     },
   },
+  {
+    name: "agent_orchestrator",
+    description:
+      "Validate a work packet manifest for Agent cluster orchestration. " +
+      "Checks atomicity rules (description ≤15 words, params ≤5, lines ≤50), " +
+      "pre-assigns agent IDs, and writes the orchestrator plan. " +
+      "Must be called before spawning Sub-Orchestrator or Worker Agents.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskDir: {
+          type: "string",
+          description: "Absolute path to the task directory. Auto-detected if omitted.",
+        },
+        manifest: {
+          type: "object",
+          description: "Work packet manifest containing packets[], orchestration_decision, manifest_id.",
+        },
+      },
+      required: ["manifest"],
+    },
+  },
+  {
+    name: "agent_status",
+    description:
+      "Manage Agent lifecycle status: register, update, query, or list agents for a task. " +
+      "Agent states are persisted to agents/<agent_id>.yaml for audit and recovery.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskDir: {
+          type: "string",
+          description: "Absolute path to the task directory. Auto-detected if omitted.",
+        },
+        operation: {
+          type: "string",
+          enum: ["register", "update", "query", "list"],
+          description: "Operation to perform.",
+        },
+        agent_id: {
+          type: "string",
+          description: "Agent ID. Required for register/update/query.",
+        },
+        status: {
+          type: "string",
+          enum: ["pending", "running", "completed", "failed", "timeout"],
+          description: "Agent status. Required for register/update.",
+        },
+        role: {
+          type: "string",
+          description: "Agent role: orchestrator_prime, sub_orchestrator, worker.",
+        },
+        progress: {
+          type: "string",
+          description: "Progress percentage or description.",
+        },
+        output_ref: {
+          type: "string",
+          description: "Path to the agent's output artifact.",
+        },
+      },
+      required: ["operation"],
+    },
+  },
+  {
+    name: "checkpoint_sync",
+    description:
+      "Save or load a task context checkpoint. Captures task state, board, agent statuses, and checker results. " +
+      "Use before Fan-In or before risky operations to enable rollback.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskDir: {
+          type: "string",
+          description: "Absolute path to the task directory. Auto-detected if omitted.",
+        },
+        operation: {
+          type: "string",
+          enum: ["save", "load", "list"],
+          description: "save: create checkpoint; load: restore checkpoint; list: enumerate checkpoints.",
+        },
+        checkpoint_id: {
+          type: "string",
+          description: "Checkpoint ID. Optional for save (auto-generated). Required for load.",
+        },
+      },
+      required: ["operation"],
+    },
+  },
 ];

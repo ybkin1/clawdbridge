@@ -1288,3 +1288,288 @@ export async function getActiveContractSet(args = {}) {
   };
   return getActiveContractSetInternal(context);
 }
+
+// ---------------------------------------------------------------------------
+// Agent Orchestration Layer (L4-L6)
+// ---------------------------------------------------------------------------
+
+function loadAgentOrchestrationRules() {
+  return loadConfig("agent-orchestration-rules") || {};
+}
+
+function validatePacketAtomicity(packet, rules) {
+  const violations = [];
+  const r = rules.rules || {};
+
+  // Description length ≤ 15 words
+  const desc = packet.description || packet.objective || "";
+  const wordCount = desc.split(/\s+/).filter((w) => w.length > 0).length;
+  if (r.max_description_words && wordCount > r.max_description_words) {
+    violations.push(`description exceeds ${r.max_description_words} words (${wordCount})`);
+  }
+
+  // Input params ≤ 5
+  const params = packet.input_params || [];
+  if (r.max_input_params && params.length > r.max_input_params) {
+    violations.push(`input_params exceed ${r.max_input_params} (${params.length})`);
+  }
+
+  // Max lines ≤ 50
+  const maxLines = packet.max_lines || 0;
+  if (r.max_lines && maxLines > r.max_lines) {
+    violations.push(`max_lines exceed ${r.max_lines} (${maxLines})`);
+  }
+
+  // Must have target_file for implementation packets
+  if (r.require_target_file && !packet.target_file) {
+    violations.push("missing target_file");
+  }
+
+  // Must have acceptance criteria
+  const acceptance = packet.acceptance_criteria || packet.acceptance || "";
+  if (r.require_acceptance && (!acceptance || acceptance.length === 0)) {
+    violations.push("missing acceptance_criteria");
+  }
+
+  return violations;
+}
+
+function generateAgentId(role, packetId) {
+  const ts = new Date().toISOString().replace(/[:.]/g, "").slice(0, 15);
+  return `ag-${role}-${packetId}-${ts}`;
+}
+
+export async function agentOrchestrator(args = {}) {
+  const taskDir = resolveTaskDir(args.taskDir);
+  const manifest = args.manifest || {};
+  const packets = manifest.packets || [];
+
+  if (!taskDir) {
+    return { allowed: false, reason: "No active task found.", violations: [] };
+  }
+
+  if (packets.length === 0) {
+    return { allowed: false, reason: "Manifest contains no packets.", violations: [] };
+  }
+
+  // Validate orchestration decision
+  const validDecisions = ["multi_packet_parallel", "single_packet_direct", "single_thread_exception"];
+  const decision = manifest.orchestration_decision || "single_packet_direct";
+  if (!validDecisions.includes(decision)) {
+    return {
+      allowed: false,
+      reason: `Invalid orchestration_decision: '${decision}'. Must be one of: ${validDecisions.join(", ")}`,
+      violations: [],
+    };
+  }
+
+  // Load agent orchestration rules
+  const rules = loadAgentOrchestrationRules();
+  const allViolations = [];
+  const agentIds = [];
+
+  for (let i = 0; i < packets.length; i++) {
+    const pkt = packets[i];
+    const v = validatePacketAtomicity(pkt, rules);
+    if (v.length > 0) {
+      allViolations.push({ packet_index: i, packet_id: pkt.packet_id || i, violations: v });
+    }
+
+    // Pre-assign agent IDs based on context
+    const role = packets.length === 1 ? "worker" : "sub-orchestrator";
+    agentIds.push(generateAgentId(role, pkt.packet_id || `pkt-${i}`));
+  }
+
+  if (allViolations.length > 0) {
+    return {
+      allowed: false,
+      reason: `Manifest validation failed: ${allViolations.length} packet(s) violated atomicity rules.`,
+      violations: allViolations,
+      agent_ids: [],
+    };
+  }
+
+  // Write orchestrator plan
+  const agentsDir = path.join(taskDir, "agents");
+  if (!fs.existsSync(agentsDir)) fs.mkdirSync(agentsDir, { recursive: true });
+
+  const planFile = path.join(agentsDir, "orchestrator-plan.yaml");
+  const planDoc = {
+    plan_id: `plan-${Date.now()}`,
+    task_id: path.basename(taskDir),
+    manifest_id: manifest.manifest_id || "unknown",
+    orchestration_decision: decision,
+    created_at: new Date().toISOString(),
+    agent_ids: agentIds,
+    packets: packets.map((p, i) => ({
+      ...p,
+      assigned_agent_id: agentIds[i],
+    })),
+    status: "approved",
+  };
+  fs.writeFileSync(planFile, yaml.dump(planDoc));
+
+  return {
+    allowed: true,
+    agent_ids: agentIds,
+    execution_plan: {
+      phase: packets.length === 1 ? "spawn_worker" : "spawn_sub_orchestrator",
+      packet_count: packets.length,
+      decision,
+    },
+    validation_report: `All ${packets.length} packet(s) passed atomicity check.`,
+    plan_file: planFile,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export async function agentStatus(args = {}) {
+  const taskDir = resolveTaskDir(args.taskDir);
+  const operation = args.operation || "query";
+  const agentId = args.agent_id || "";
+
+  if (!taskDir) {
+    return { success: false, reason: "No active task found." };
+  }
+
+  const agentsDir = path.join(taskDir, "agents");
+  if (!fs.existsSync(agentsDir)) {
+    fs.mkdirSync(agentsDir, { recursive: true });
+  }
+
+  if (operation === "list") {
+    const files = fs.existsSync(agentsDir)
+      ? fs.readdirSync(agentsDir).filter((f) => f.endsWith(".yaml") && f.startsWith("ag-"))
+      : [];
+    const agents = files.map((f) => {
+      const doc = loadYaml(path.join(agentsDir, f));
+      return { agent_id: doc?.agent_id || f.replace(".yaml", ""), status: doc?.status || "unknown" };
+    });
+    return { success: true, count: agents.length, agents, timestamp: new Date().toISOString() };
+  }
+
+  if (operation === "register" || operation === "update") {
+    if (!agentId) {
+      return { success: false, reason: "agent_id is required for register/update." };
+    }
+    const agentFile = path.join(agentsDir, `${agentId}.yaml`);
+    const existing = loadYaml(agentFile) || {};
+    const doc = {
+      ...existing,
+      agent_id: agentId,
+      role: args.role || existing.role || "worker",
+      parent_packet_id: args.parent_packet_id || existing.parent_packet_id || "",
+      task_id: path.basename(taskDir),
+      status: args.status || existing.status || "pending",
+      progress: args.progress || existing.progress || "0%",
+      output_ref: args.output_ref || existing.output_ref || "",
+      error_log: args.error_log || existing.error_log || "",
+      updated_at: new Date().toISOString(),
+      started_at: existing.started_at || args.started_at || new Date().toISOString(),
+    };
+    fs.writeFileSync(agentFile, yaml.dump(doc));
+    return { success: true, agent_id: agentId, status: doc.status, timestamp: new Date().toISOString() };
+  }
+
+  if (operation === "query") {
+    if (!agentId) {
+      return { success: false, reason: "agent_id is required for query." };
+    }
+    const agentFile = path.join(agentsDir, `${agentId}.yaml`);
+    const doc = loadYaml(agentFile);
+    if (!doc) {
+      return { success: false, reason: `Agent '${agentId}' not found.` };
+    }
+    return { success: true, agent: doc, timestamp: new Date().toISOString() };
+  }
+
+  return { success: false, reason: `Unknown operation: '${operation}'.` };
+}
+
+export async function checkpointSync(args = {}) {
+  const taskDir = resolveTaskDir(args.taskDir);
+  const operation = args.operation || "save";
+  const checkpointId = args.checkpoint_id || `cp-${Date.now()}`;
+
+  if (!taskDir) {
+    return { success: false, reason: "No active task found." };
+  }
+
+  const checkpointsDir = path.join(taskDir, "checkpoints");
+  if (!fs.existsSync(checkpointsDir)) {
+    fs.mkdirSync(checkpointsDir, { recursive: true });
+  }
+
+  if (operation === "save") {
+    const checkpointFile = path.join(checkpointsDir, `${checkpointId}.yaml`);
+    const snapshot = {
+      checkpoint_id: checkpointId,
+      task_id: path.basename(taskDir),
+      saved_at: new Date().toISOString(),
+      task_state: loadYaml(path.join(taskDir, "00-task-state.yaml")) || {},
+      board: loadYaml(path.join(taskDir, "board.yaml")) || {},
+      agents: {},
+      checkers: {},
+    };
+
+    // Snapshot agent statuses
+    const agentsDir = path.join(taskDir, "agents");
+    if (fs.existsSync(agentsDir)) {
+      for (const f of fs.readdirSync(agentsDir)) {
+        if (f.endsWith(".yaml")) {
+          const doc = loadYaml(path.join(agentsDir, f));
+          if (doc && doc.agent_id) snapshot.agents[doc.agent_id] = doc;
+        }
+      }
+    }
+
+    // Snapshot checker results
+    const checkersDir = path.join(taskDir, "checkers");
+    if (fs.existsSync(checkersDir)) {
+      for (const f of fs.readdirSync(checkersDir)) {
+        if (f.endsWith(".yaml") && !f.startsWith("evidence-lock")) {
+          const doc = loadYaml(path.join(checkersDir, f));
+          if (doc && doc.checker_id) snapshot.checkers[doc.checker_id] = doc;
+        }
+      }
+    }
+
+    fs.writeFileSync(checkpointFile, yaml.dump(snapshot));
+    return {
+      success: true,
+      checkpoint_id: checkpointId,
+      checkpoint_file: checkpointFile,
+      saved_at: snapshot.saved_at,
+    };
+  }
+
+  if (operation === "load") {
+    const checkpointFile = path.join(checkpointsDir, `${checkpointId}.yaml`);
+    if (!fs.existsSync(checkpointFile)) {
+      return { success: false, reason: `Checkpoint '${checkpointId}' not found.` };
+    }
+    const snapshot = loadYaml(checkpointFile);
+    return {
+      success: true,
+      checkpoint_id: checkpointId,
+      snapshot,
+      restored_at: new Date().toISOString(),
+    };
+  }
+
+  if (operation === "list") {
+    const files = fs.existsSync(checkpointsDir)
+      ? fs.readdirSync(checkpointsDir).filter((f) => f.endsWith(".yaml"))
+      : [];
+    const checkpoints = files.map((f) => {
+      const doc = loadYaml(path.join(checkpointsDir, f));
+      return {
+        checkpoint_id: doc?.checkpoint_id || f.replace(".yaml", ""),
+        saved_at: doc?.saved_at || "unknown",
+      };
+    });
+    return { success: true, count: checkpoints.length, checkpoints, timestamp: new Date().toISOString() };
+  }
+
+  return { success: false, reason: `Unknown operation: '${operation}'.` };
+}

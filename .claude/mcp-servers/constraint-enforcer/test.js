@@ -15,6 +15,9 @@ import {
   getCheckerCatalog,
   getActiveContractSet,
   invalidateConfigCache,
+  agentOrchestrator,
+  agentStatus,
+  checkpointSync,
 } from "./enforcer.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -294,6 +297,136 @@ async function testConfigCacheHotReload() {
   );
 }
 
+async function testAgentOrchestratorValidManifest() {
+  console.log("\n--- Test: agent_orchestrator valid manifest ---");
+  setup();
+
+  const manifest = {
+    manifest_id: "mf-test",
+    orchestration_decision: "multi_packet_parallel",
+    packets: [
+      {
+        packet_id: "pkt-auth-login",
+        objective: "Implement JWT login handler",
+        input_params: ["secret_key", "expiry_hours"],
+        max_lines: 50,
+        target_file: "src/auth/login.ts",
+        acceptance_criteria: ["Unit tests pass"],
+      },
+      {
+        packet_id: "pkt-auth-middleware",
+        objective: "Implement auth middleware",
+        input_params: ["login_handler_ref"],
+        max_lines: 50,
+        target_file: "src/auth/middleware.ts",
+        acceptance_criteria: ["Type check passes"],
+      },
+    ],
+  };
+
+  const result = await agentOrchestrator({ taskDir: TEST_TASK_DIR, manifest });
+  console.log(JSON.stringify(result, null, 2));
+  assert(result.allowed === true, "Valid manifest should be allowed");
+  assert(result.agent_ids.length === 2, "Should assign 2 agent IDs");
+  assert(result.execution_plan.phase === "spawn_sub_orchestrator", "Multi-packet should spawn sub-orchestrator");
+  assert(fs.existsSync(result.plan_file), "Plan file should be written");
+}
+
+async function testAgentOrchestratorInvalidManifest() {
+  console.log("\n--- Test: agent_orchestrator invalid manifest ---");
+  setup();
+
+  const manifest = {
+    manifest_id: "mf-invalid",
+    orchestration_decision: "multi_packet_parallel",
+    packets: [
+      {
+        packet_id: "pkt-bad",
+        objective: "This is a very long description that definitely exceeds fifteen words limit",
+        input_params: ["a", "b", "c", "d", "e", "f"],
+        max_lines: 100,
+      },
+    ],
+  };
+
+  const result = await agentOrchestrator({ taskDir: TEST_TASK_DIR, manifest });
+  console.log(JSON.stringify(result, null, 2));
+  assert(result.allowed === false, "Invalid manifest should be blocked");
+  assert(result.violations.length > 0, "Should return violations");
+}
+
+async function testAgentStatusLifecycle() {
+  console.log("\n--- Test: agent_status lifecycle ---");
+  setup();
+
+  // Register
+  const reg = await agentStatus({
+    taskDir: TEST_TASK_DIR,
+    operation: "register",
+    agent_id: "ag-worker-pkt-001",
+    status: "pending",
+    role: "worker",
+    progress: "0%",
+  });
+  assert(reg.success === true, "Register should succeed");
+
+  // Update
+  const upd = await agentStatus({
+    taskDir: TEST_TASK_DIR,
+    operation: "update",
+    agent_id: "ag-worker-pkt-001",
+    status: "running",
+    progress: "50%",
+    output_ref: "artifacts/pkt-001.ts",
+  });
+  assert(upd.success === true, "Update should succeed");
+  assert(upd.status === "running", "Status should be running");
+
+  // Query
+  const qry = await agentStatus({
+    taskDir: TEST_TASK_DIR,
+    operation: "query",
+    agent_id: "ag-worker-pkt-001",
+  });
+  assert(qry.success === true, "Query should succeed");
+  assert(qry.agent.status === "running", "Queried status should be running");
+  assert(qry.agent.output_ref === "artifacts/pkt-001.ts", "Output ref should match");
+
+  // List
+  const lst = await agentStatus({ taskDir: TEST_TASK_DIR, operation: "list" });
+  assert(lst.success === true, "List should succeed");
+  assert(lst.count === 1, "Should list 1 agent");
+}
+
+async function testCheckpointSync() {
+  console.log("\n--- Test: checkpoint_sync ---");
+  setup();
+
+  // Save
+  const save = await checkpointSync({
+    taskDir: TEST_TASK_DIR,
+    operation: "save",
+    checkpoint_id: "cp-test-001",
+  });
+  assert(save.success === true, "Save should succeed");
+  assert(fs.existsSync(save.checkpoint_file), "Checkpoint file should exist");
+
+  // List
+  const lst = await checkpointSync({ taskDir: TEST_TASK_DIR, operation: "list" });
+  assert(lst.success === true, "List should succeed");
+  assert(lst.count === 1, "Should list 1 checkpoint");
+
+  // Load
+  const load = await checkpointSync({
+    taskDir: TEST_TASK_DIR,
+    operation: "load",
+    checkpoint_id: "cp-test-001",
+  });
+  assert(load.success === true, "Load should succeed");
+  assert(load.snapshot.checkpoint_id === "cp-test-001", "Loaded checkpoint ID should match");
+  assert(load.snapshot.task_state.task_id === "tk-test-001", "Task state should be captured");
+}
+
 async function main() {
   setup();
 
@@ -309,6 +442,10 @@ async function main() {
   await testGetActiveContractSet();
   await testRegistryDerivedMinimumCheckers();
   await testConfigCacheHotReload();
+  await testAgentOrchestratorValidManifest();
+  await testAgentOrchestratorInvalidManifest();
+  await testAgentStatusLifecycle();
+  await testCheckpointSync();
 
   console.log(`\n=== Results: ${passCount} passed, ${failCount} failed ===`);
   cleanup();

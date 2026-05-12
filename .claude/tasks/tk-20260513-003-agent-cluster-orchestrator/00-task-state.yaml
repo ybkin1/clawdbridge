@@ -1,0 +1,11 @@
+task_id: tk-20260513-003
+title: "Agent 集群编排层 L4-L6 落地实现"
+delivery_mode: full
+phase: design
+subphase: authoring
+phase_status: in_progress
+current_primary_artifact: ".claude/tasks/tk-20260513-003-agent-cluster-orchestrator/artifacts/orchestrator-implementation-plan.md"
+current_gate_bundle: ""
+gate_results: {}
+closeout_allowed: false
+updated_at: "2026-05-12T16:50:38Z"
