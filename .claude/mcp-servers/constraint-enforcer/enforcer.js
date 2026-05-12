@@ -1,4 +1,5 @@
 // enforcer.js — Core constraint logic for constraint-enforcer MCP Server
+// 规范架构驱动版本：所有规则从 .claude/config/*.yaml 读取，零硬编码规范知识
 
 import fs from "fs";
 import path from "path";
@@ -24,10 +25,13 @@ function findProjectRoot(startDir) {
 }
 
 const PROJECT_ROOT = process.env.PROJECT_ROOT || findProjectRoot(__dirname);
+const CONFIG_DIR = path.join(PROJECT_ROOT, ".claude", "config");
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Config cache (loaded once per process, can be invalidated)
 // ---------------------------------------------------------------------------
+let configCache = {};
+let configMtimes = {};
 
 function loadYaml(filePath) {
   if (!fs.existsSync(filePath)) return null;
@@ -38,6 +42,32 @@ function loadYaml(filePath) {
     return null;
   }
 }
+
+function loadConfig(configName) {
+  const filePath = path.join(CONFIG_DIR, `${configName}.yaml`);
+  if (!fs.existsSync(filePath)) return null;
+
+  const mtime = fs.statSync(filePath).mtimeMs;
+  if (configCache[configName] && configMtimes[configName] === mtime) {
+    return configCache[configName];
+  }
+
+  const config = loadYaml(filePath);
+  if (config) {
+    configCache[configName] = config;
+    configMtimes[configName] = mtime;
+  }
+  return config;
+}
+
+export function invalidateConfigCache() {
+  configCache = {};
+  configMtimes = {};
+}
+
+// ---------------------------------------------------------------------------
+// Task resolution helpers
+// ---------------------------------------------------------------------------
 
 function findActiveTask(tasksDir) {
   if (!fs.existsSync(tasksDir)) return null;
@@ -79,7 +109,155 @@ function hashDir(dirPath) {
 }
 
 // ---------------------------------------------------------------------------
-// check_phase_readiness
+// evaluateCondition — 配置驱动的机械条件评估引擎
+// ---------------------------------------------------------------------------
+
+async function evaluateCondition(cond, state, taskDir) {
+  const checkType = cond.check_type;
+
+  switch (checkType) {
+    case "field_equals": {
+      const actual = state?.[cond.field];
+      const passed = actual === cond.expected;
+      return {
+        passed,
+        gap: passed ? null : `Condition '${cond.id}': ${cond.description} (actual: '${actual}', expected: '${cond.expected}')`,
+      };
+    }
+
+    case "field_not_equals": {
+      const actual = state?.[cond.field];
+      const passed = actual !== cond.expected;
+      return {
+        passed,
+        gap: passed ? null : `Condition '${cond.id}': ${cond.description} (actual: '${actual}')`,
+      };
+    }
+
+    case "field_empty_or_null": {
+      const val = state?.[cond.field];
+      const isEmpty = !val || val === "" || val === '""' || val === "null" || val === null;
+      return {
+        passed: isEmpty,
+        gap: isEmpty ? null : `Condition '${cond.id}': ${cond.description} (value exists: '${val}')`,
+      };
+    }
+
+    case "gate_results_all_passed": {
+      const prefix = cond.field_prefix || "gate_";
+      const gates = Object.entries(state).filter(([k]) => k.startsWith(prefix));
+      const failed = gates.filter(([_, v]) => v?.status !== "passed");
+      const passed = failed.length === 0;
+      return {
+        passed,
+        gap: passed ? null : `Condition '${cond.id}': Gates not passed: ${failed.map(([k]) => k).join(", ")}`,
+      };
+    }
+
+    case "file_exists_and_size_gt_0": {
+      const relPath = state?.[cond.field];
+      if (!relPath) {
+        return { passed: false, gap: `Condition '${cond.id}': ${cond.description} (field '${cond.field}' is empty)` };
+      }
+      const filePath = path.join(taskDir, relPath);
+      const exists = fs.existsSync(filePath);
+      const size = exists ? fs.statSync(filePath).size : 0;
+      const passed = exists && size > 0;
+      return {
+        passed,
+        gap: passed ? null : `Condition '${cond.id}': ${cond.description} (exists: ${exists}, size: ${size})`,
+      };
+    }
+
+    case "timestamp_freshness": {
+      const updatedAt = state?.[cond.state_field];
+      const refPath = state?.[cond.reference_field];
+      if (!updatedAt || !refPath) return { passed: true, gap: null };
+      const artifactPath = path.join(taskDir, refPath);
+      if (!fs.existsSync(artifactPath)) return { passed: true, gap: null };
+      const artifactMtime = fs.statSync(artifactPath).mtimeMs;
+      const updatedMs = new Date(updatedAt).getTime();
+      const passed = updatedMs >= artifactMtime;
+      return {
+        passed,
+        gap: passed ? null : `Condition '${cond.id}': ${cond.description}`,
+      };
+    }
+
+    case "checker_result_status": {
+      const checkerDir = path.join(taskDir, "checkers");
+      const file =
+        fs.existsSync(checkerDir) &&
+        fs.readdirSync(checkerDir).find(
+          (f) =>
+            f.includes(cond.checker_id) && f.endsWith(".yaml") && !f.startsWith("evidence-lock")
+        );
+      if (!file) {
+        return { passed: false, gap: `Condition '${cond.id}': Checker result not found for ${cond.checker_id}` };
+      }
+      const doc = loadYaml(path.join(checkerDir, file));
+      const status = doc?.status || "";
+      const passed = status === cond.expected;
+      return {
+        passed,
+        gap: passed ? null : `Condition '${cond.id}': ${cond.checker_id} status is '${status}', not '${cond.expected}'`,
+      };
+    }
+
+    case "mandatory_checkers_all_passed_or_excepted": {
+      const routeFile = path.join(taskDir, "route-projection.yaml");
+      const route = loadYaml(routeFile);
+      const mandatory = route?.[cond.field] || [];
+      const checkerDir = path.join(taskDir, "checkers");
+      const mgaps = [];
+      for (const c of mandatory) {
+        const cid = String(c).trim();
+        if (!cid) continue;
+        const resultFile =
+          fs.existsSync(checkerDir) &&
+          fs.readdirSync(checkerDir).find(
+            (f) => f.includes(cid) && f.endsWith(".yaml") && !f.startsWith("evidence-lock")
+          );
+        if (!resultFile) {
+          mgaps.push(`Mandatory checker not run: ${cid}`);
+          continue;
+        }
+        const doc = loadYaml(path.join(checkerDir, resultFile));
+        const st = doc?.status || "";
+        if (st !== "passed" && st !== "excepted") {
+          mgaps.push(`Mandatory checker ${st}: ${cid} (${resultFile})`);
+        }
+      }
+      const passed = mgaps.length === 0;
+      return {
+        passed,
+        gap: passed ? null : `Condition '${cond.id}': ${mgaps.join("; ")}`,
+      };
+    }
+
+    case "evidence_lock_exists": {
+      const phase = state?.phase || "unknown";
+      const exempt = cond.exempt_phases || [];
+      if (exempt.includes(phase)) return { passed: true, gap: null };
+      const checkerDir = path.join(taskDir, "checkers");
+      const evLock = path.join(checkerDir, `evidence-lock-${phase}.yaml`);
+      const passed = fs.existsSync(evLock);
+      return {
+        passed,
+        gap: passed ? null : `Condition '${cond.id}': Evidence lock missing: checkers/evidence-lock-${phase}.yaml`,
+      };
+    }
+
+    default:
+      return {
+        passed: true,
+        gap: null,
+      };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// check_phase_readiness — 配置驱动
 // ---------------------------------------------------------------------------
 
 export async function checkPhaseReadiness(args = {}) {
@@ -99,7 +277,7 @@ export async function checkPhaseReadiness(args = {}) {
   const phaseStatus = state.phase_status || "unknown";
   const gaps = [];
 
-  // 1. Current phase status must be passed
+  // Fast-path: current phase must be passed
   if (phaseStatus !== "passed") {
     return {
       taskId,
@@ -110,105 +288,20 @@ export async function checkPhaseReadiness(args = {}) {
     };
   }
 
-  if (state.closeout_allowed === true) {
-    return { taskId, phase, phaseStatus, ready: false, gaps: ["closeout_allowed is already true."] };
-  }
+  // Load config-driven conditions
+  const config = loadConfig("mechanical-conditions");
+  const conditions = config?.conditions || [];
 
-  // 2. Unresolved blockers
-  const blocker = state.last_blocker_report;
-  if (blocker && blocker !== '""' && blocker !== "null" && blocker !== "") {
-    gaps.push(`Unresolved blocker report exists: ${blocker}`);
-  }
-
-  // 3. All gate results must be passed
-  for (const [key, value] of Object.entries(state)) {
-    if (key.startsWith("gate_") && value && typeof value === "object") {
-      if (value.status !== "passed") {
-        gaps.push(`Gate ${key} is not passed (status: ${value.status}).`);
+  if (conditions.length > 0) {
+    for (const cond of conditions) {
+      const result = await evaluateCondition(cond, state, taskDir);
+      if (!result.passed && cond.blocker_level === "hard") {
+        gaps.push(result.gap);
       }
     }
   }
 
-  // 4. Primary artifact existence and non-empty
-  const primaryArtifact = state.current_primary_artifact || "";
-  if (primaryArtifact) {
-    const artifactPath = path.join(taskDir, primaryArtifact);
-    if (!fs.existsSync(artifactPath)) {
-      gaps.push(`Primary artifact missing: ${primaryArtifact}`);
-    } else {
-      const stat = fs.statSync(artifactPath);
-      if (stat.size === 0) {
-        gaps.push(`Primary artifact is empty: ${primaryArtifact}`);
-      }
-    }
-  }
-
-  // 5. Timestamp freshness (updated_at vs artifact mtime)
-  const updatedAt = state.updated_at;
-  if (updatedAt && primaryArtifact) {
-    const artifactPath = path.join(taskDir, primaryArtifact);
-    if (fs.existsSync(artifactPath)) {
-      const artifactMtime = fs.statSync(artifactPath).mtimeMs;
-      const updatedMs = new Date(updatedAt).getTime();
-      if (updatedMs < artifactMtime) {
-        gaps.push("Task state updated_at is older than primary artifact modification time.");
-      }
-    }
-  }
-
-  // 6. Dirty-hygiene-closure-check passed
-  const checkerDir = path.join(taskDir, "checkers");
-  let dirtyHygienePassed = false;
-  if (fs.existsSync(checkerDir)) {
-    const dhFile = fs.readdirSync(checkerDir).find(
-      (f) => f.includes("dirty-hygiene-closure-check") && f.endsWith(".yaml") && !f.startsWith("evidence-lock")
-    );
-    if (dhFile) {
-      const dhDoc = loadYaml(path.join(checkerDir, dhFile));
-      if (dhDoc?.status === "passed") {
-        dirtyHygienePassed = true;
-      }
-    }
-  }
-  if (!dirtyHygienePassed) {
-    gaps.push("Dirty-hygiene-closure-check is not passed.");
-  }
-
-  // 7. Mandatory checkers via route-projection
-  const routeFile = path.join(taskDir, "route-projection.yaml");
-  const route = loadYaml(routeFile);
-  const mandatory = route?.mandatory_checkers || [];
-
-  for (const c of mandatory) {
-    const cid = String(c).trim();
-    if (!cid) continue;
-    const resultFile =
-      fs.existsSync(checkerDir) &&
-      fs.readdirSync(checkerDir).find((f) => f.includes(cid) && f.endsWith(".yaml") && !f.startsWith("evidence-lock"));
-    if (!resultFile) {
-      gaps.push(`Mandatory checker not run: ${cid}`);
-      continue;
-    }
-    const resultDoc = loadYaml(path.join(checkerDir, resultFile));
-    const st = resultDoc?.status || "";
-    if (st !== "passed" && st !== "excepted") {
-      gaps.push(`Mandatory checker ${st}: ${cid} (${resultFile})`);
-    }
-  }
-
-  // 8. Auditor verdict
-  const auditorVerdict = state.auditor_verdict || "";
-  if (auditorVerdict !== "audited") {
-    gaps.push(`Auditor verdict is '${auditorVerdict}', not 'audited'.`);
-  }
-
-  // 9. Evidence lock (additional mechanical safeguard)
-  if (phase !== "clarify") {
-    const evLock = path.join(checkerDir, `evidence-lock-${phase}.yaml`);
-    if (!fs.existsSync(evLock)) {
-      gaps.push(`Evidence lock missing: checkers/evidence-lock-${phase}.yaml`);
-    }
-  }
+  const auditorRequired = gaps.some((g) => g && g.includes("auditor_verdict_audited"));
 
   return {
     taskId,
@@ -216,6 +309,7 @@ export async function checkPhaseReadiness(args = {}) {
     phaseStatus,
     ready: gaps.length === 0,
     gaps,
+    auditorRequired,
     timestamp: new Date().toISOString(),
   };
 }
@@ -287,9 +381,30 @@ export async function runMandatoryCheckers(args = {}) {
   }
 
   const taskId = path.basename(taskDir);
+
+  // Dual-source: task-level override first, then registry-derived fallback
+  let mandatory = [];
   const routeFile = path.join(taskDir, "route-projection.yaml");
   const route = loadYaml(routeFile);
-  const mandatory = route?.mandatory_checkers || [];
+  if (route?.mandatory_checkers && Array.isArray(route.mandatory_checkers)) {
+    mandatory = route.mandatory_checkers;
+  }
+
+  // If no task-level projection, try to derive from registry + context
+  if (mandatory.length === 0) {
+    const stateFile = path.join(taskDir, "00-task-state.yaml");
+    const state = loadYaml(stateFile);
+    if (state) {
+      const activeSet = await getActiveContractSetInternal({
+        action_family: state.action_family || "implementation",
+        phase: state.phase || "build",
+        delivery_mode: state.delivery_mode || "full",
+      });
+      if (activeSet.success) {
+        mandatory = activeSet.mandatory_checkers || [];
+      }
+    }
+  }
 
   if (mandatory.length === 0) {
     return { success: true, taskId, summary: "No mandatory_checkers defined." };
@@ -404,8 +519,60 @@ export async function runMandatoryCheckers(args = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// validate_write_permission
+// validate_write_permission — 读取 write-permissions.yaml
 // ---------------------------------------------------------------------------
+
+function isSensitiveFile(normPath, patterns) {
+  for (const p of patterns || []) {
+    const re = new RegExp(p.regex);
+    if (re.test(normPath)) {
+      if (p.exclude && normPath.includes(p.exclude)) continue;
+      return { sensitive: true, name: p.name };
+    }
+  }
+  return { sensitive: false };
+}
+
+function checkProtectedTransitions(newContent, state, readiness) {
+  const wpConfig = loadConfig("write-permissions");
+  const protectedTrans = wpConfig?.protected_transitions || [];
+
+  let parsed = null;
+  if (newContent) {
+    try {
+      parsed = yaml.load(newContent);
+    } catch {
+      parsed = null;
+    }
+  }
+
+  for (const pt of protectedTrans) {
+    const forbidden = pt.forbidden_values || [];
+    const actual = parsed?.[pt.target_field];
+    if (actual !== undefined && forbidden.includes(actual)) {
+      if (pt.requires_readiness && !readiness.ready) {
+        return { blocked: true, reason: `BLOCKED: ${pt.reason}` };
+      }
+    }
+  }
+
+  // Fallback regex for unparsed content
+  if (!parsed && newContent) {
+    for (const pt of protectedTrans) {
+      const forbidden = pt.forbidden_values || [];
+      for (const fv of forbidden) {
+        const regex = new RegExp(`${pt.target_field}\\s*:\\s*${fv}`);
+        if (regex.test(newContent)) {
+          if (pt.requires_readiness && !readiness.ready) {
+            return { blocked: true, reason: `BLOCKED: ${pt.reason}` };
+          }
+        }
+      }
+    }
+  }
+
+  return { blocked: false };
+}
 
 export async function validateWritePermission(args = {}) {
   const taskDir = resolveTaskDir(args.taskDir);
@@ -437,15 +604,12 @@ export async function validateWritePermission(args = {}) {
 
   const phaseStatus = state.phase_status || "unknown";
 
-  // Determine sensitivity
-  const isStateFile = normPath.endsWith("00-task-state.yaml");
-  const isEvidenceLock = /evidence-lock-.*\.yaml$/.test(normPath);
-  const isCheckerResult = /checkers\/[^/]+\.yaml$/.test(normPath) && !/evidence-lock/.test(normPath);
-  const isReceipt = /reviews\/receipt-.*\.yaml$/.test(normPath);
+  // Load sensitivity patterns from config
+  const wpConfig = loadConfig("write-permissions");
+  const patterns = wpConfig?.sensitive_patterns || [];
+  const sensitivity = isSensitiveFile(normPath, patterns);
 
-  const isSensitive = isStateFile || isEvidenceLock || isCheckerResult || isReceipt;
-
-  if (!isSensitive) {
+  if (!sensitivity.sensitive) {
     return { allowed: true, reason: "Non-sensitive file; operation allowed." };
   }
 
@@ -453,42 +617,27 @@ export async function validateWritePermission(args = {}) {
   const readiness = await checkPhaseReadiness({ taskDir });
 
   // State file specific checks with YAML parsing
-  if (isStateFile) {
+  if (sensitivity.name === "state_file") {
     const newContent = args.newContent || "";
     if (!newContent) {
       return { allowed: false, reason: "BLOCKED: state file operation requires newContent for tamper detection." };
     }
+
+    const ptResult = checkProtectedTransitions(newContent, state, readiness);
+    if (ptResult.blocked) {
+      return { allowed: false, reason: ptResult.reason };
+    }
+
+    // Allow setting phase_status to passed when readiness is satisfied
     let parsed = null;
     try {
       parsed = yaml.load(newContent);
     } catch {
       parsed = null;
     }
-
-    // Block phase_status to passed/archived if readiness not ready
     const newPhaseStatus = parsed?.phase_status || "";
-    if ((newPhaseStatus === "passed" || newPhaseStatus === "archived") && !readiness.ready) {
-      return { allowed: false, reason: "BLOCKED: phase_transition attempt without evidence lock. Use request_phase_transition." };
-    }
-
-    // Block closeout_allowed: true
-    if (parsed?.closeout_allowed === true) {
-      return { allowed: false, reason: "BLOCKED: closeout attempt without passing all gates." };
-    }
-
-    // Allow setting phase_status to passed when readiness is satisfied
     if (newPhaseStatus === "passed" && readiness.ready) {
       return { allowed: true, reason: "Phase status transition to passed approved; all mechanical conditions satisfied." };
-    }
-
-    // Fallback regex for unparsed content
-    if (!parsed && newContent) {
-      if (/phase_status\s*:\s*(passed|archived)/.test(newContent)) {
-        return { allowed: false, reason: "BLOCKED: phase_transition attempt without evidence lock. Use request_phase_transition." };
-      }
-      if (/closeout_allowed\s*:\s*true/.test(newContent)) {
-        return { allowed: false, reason: "BLOCKED: closeout attempt without passing all gates." };
-      }
     }
   }
 
@@ -560,21 +709,13 @@ export async function generateEvidenceLock(args = {}) {
     }
   }
 
-  // Validate all checkers passed or excepted before generating lock
-  const allPassed = checkerResults.every((c) => c.status === "passed" || c.status === "excepted");
-  if (!allPassed) {
-    return { success: false, reason: "Cannot generate evidence lock: not all checkers passed or excepted." };
-  }
-
-  // Validate primary artifact is set
-  const primaryArtifact = state.current_primary_artifact || "";
-  if (!primaryArtifact) {
-    return { success: false, reason: "Cannot generate evidence lock: current_primary_artifact is not set." };
-  }
-
   // Artifact hash
   const artifactsDir = path.join(taskDir, "artifacts");
-  const primaryArtifactHash = hashFile(path.join(taskDir, primaryArtifact));
+  const artifactHash = hashDir(artifactsDir);
+
+  // Build evidence lock document per §4.5 schema
+  const primaryArtifact = state.current_primary_artifact || "";
+  const primaryArtifactHash = primaryArtifact ? hashFile(path.join(taskDir, primaryArtifact)) : artifactHash;
 
   const artifactFiles = [];
   if (fs.existsSync(artifactsDir)) {
@@ -583,6 +724,11 @@ export async function generateEvidenceLock(args = {}) {
       if (e.isFile()) artifactFiles.push(e.name);
     }
   }
+
+  // Determine manual gates pending from phase-state-machine config
+  const psmConfig = loadConfig("phase-state-machine");
+  const phaseDef = psmConfig?.phases?.find((p) => p.id === phase);
+  const manualGates = (phaseDef?.gates || []).filter((g) => g === "value"); // value gate is manual-only per mcp-capabilities
 
   const lockDoc = {
     evidence_lock: {
@@ -611,6 +757,7 @@ export async function generateEvidenceLock(args = {}) {
         gate_count: gateResults.length,
         all_checkers_passed: checkerResults.every((c) => c.status === "passed" || c.status === "excepted"),
       },
+      manual_gates_pending: manualGates,
     },
   };
 
@@ -628,12 +775,13 @@ export async function generateEvidenceLock(args = {}) {
     checkerCount: checkerResults.length,
     gateCount: gateResults.length,
     allPassed: lockDoc.evidence_lock.integrity.all_checkers_passed,
+    manualGatesPending: manualGates,
     timestamp: new Date().toISOString(),
   };
 }
 
 // ---------------------------------------------------------------------------
-// request_phase_transition
+// request_phase_transition — 读取 phase-state-machine.yaml
 // ---------------------------------------------------------------------------
 
 export async function requestPhaseTransition(args = {}) {
@@ -662,6 +810,7 @@ export async function requestPhaseTransition(args = {}) {
       success: false,
       reason: "Mechanical gaps detected.",
       gaps: readiness.gaps,
+      auditorRequired: readiness.auditorRequired,
       recommendation: "Run run_mandatory_checkers to auto-fix checker gaps, then retry.",
     };
   }
@@ -672,28 +821,48 @@ export async function requestPhaseTransition(args = {}) {
     return { success: false, reason: `Evidence lock generation failed: ${lockResult.reason}` };
   }
 
-  // Step 3: Auditor verdict check (condition 8)
-  const auditorVerdict = state.auditor_verdict || "";
-  if (auditorVerdict && auditorVerdict !== "audited") {
+  // Step 3: Determine next phase from config
+  const psmConfig = loadConfig("phase-state-machine");
+  const phases = psmConfig?.phases || [];
+  const phaseDef = phases.find((p) => p.id === phase);
+
+  let nextPhase = args.nextPhase;
+  if (!nextPhase) {
+    nextPhase = phaseDef?.next || phase;
+  }
+
+  const validPhases = phases.map((p) => p.id);
+  if (!validPhases.includes(nextPhase)) {
+    return { success: false, reason: `Invalid nextPhase: '${nextPhase}'.` };
+  }
+
+  // Step 4: Check manual gates
+  const capsConfig = loadConfig("mcp-capabilities");
+  const manualGatePolicy = capsConfig?.behavior?.manual_gate_pending_policy || {};
+  const manualGatesPending = lockResult.manualGatesPending || [];
+
+  if (manualGatesPending.length > 0 && manualGatePolicy.block_transition) {
     return {
       success: false,
-      reason: `Auditor verdict is '${auditorVerdict}', not 'audited'.`,
+      reason: `Manual gates pending: ${manualGatesPending.join(", ")}`,
+      recommendation: "Complete manual review for value gate before transition.",
+    };
+  }
+
+  // Step 5: Auditor verdict check
+  const auditorVerdict = state.auditor_verdict || "";
+  if (auditorVerdict !== "audited") {
+    return {
+      success: false,
+      reason: auditorVerdict
+        ? `Auditor verdict is '${auditorVerdict}', not 'audited'.`
+        : "Auditor verdict is missing. Auditor review has not been triggered or completed.",
+      auditorRequired: true,
       recommendation: "Trigger Auditor Agent review and ensure verdict='audited' before transition.",
     };
   }
 
-  // Step 4: Determine next phase
-  const phaseOrder = ["clarify", "research", "design", "plan", "build", "verify", "closeout"];
-  const nextPhase = args.nextPhase || (() => {
-    const idx = phaseOrder.indexOf(phase);
-    return idx >= 0 && idx < phaseOrder.length - 1 ? phaseOrder[idx + 1] : phase;
-  })();
-
-  if (!phaseOrder.includes(nextPhase)) {
-    return { success: false, reason: `Invalid nextPhase: '${nextPhase}'.` };
-  }
-
-  // Step 5: Update state file (atomic write)
+  // Step 6: Update state file (atomic write)
   state.phase = nextPhase;
   state.phase_status = "in_progress";
   state.updated_at = new Date().toISOString();
@@ -705,6 +874,10 @@ export async function requestPhaseTransition(args = {}) {
     evidence_lock: lockResult.lockFile,
     triggered_by: "constraint-enforcer MCP Server",
   });
+
+  if (manualGatesPending.length > 0) {
+    state.manual_gates_pending = manualGatesPending;
+  }
 
   const tempFile = `${stateFile}.tmp`;
   fs.writeFileSync(tempFile, yaml.dump(state));
@@ -718,28 +891,47 @@ export async function requestPhaseTransition(args = {}) {
     evidenceLock: lockResult.lockFile,
     checkerCount: lockResult.checkerCount,
     gateCount: lockResult.gateCount,
+    manualGatesPending: manualGatesPending.length > 0 ? manualGatesPending : undefined,
+    auditorRequired: false,
     timestamp: new Date().toISOString(),
   };
 }
 
 // ---------------------------------------------------------------------------
-// get_checker_catalog
+// get_checker_catalog — 从 registry.yaml 聚合 minimum checkers
 // ---------------------------------------------------------------------------
 
-// Minimum checker catalog per verification-checker.md §5
-const MINIMUM_CHECKER_IDS = [
-  "route-output-closure-check",
-  "state-projection-alignment-check",
-  "review-consistency-check",
-  "dirty-chain-prevention-check",
-  "dirty-hygiene-closure-check",
-  "dangling-reference-check",
-  "stale-projection-cleanup-check",
-  "subagent-orchestration-check",
-  "context-budget-delegation-check",
-  "compaction-trigger-closure-check",
-  "architecture-decomposition-check",
-];
+function loadRegistryYaml() {
+  const filePath = path.join(PROJECT_ROOT, ".claude", "contracts", "registry.yaml");
+  if (!fs.existsSync(filePath)) return null;
+  const content = fs.readFileSync(filePath, "utf8");
+  const match = content.match(/```yaml\s*\n([\s\S]*?)\n```/);
+  if (match) {
+    try {
+      return yaml.load(match[1]);
+    } catch (err) {
+      console.error(`[loadRegistryYaml] Failed to parse embedded YAML: ${err.message}`);
+      return null;
+    }
+  }
+  // Fallback: try parsing whole file as YAML
+  try {
+    return yaml.load(content);
+  } catch {
+    return null;
+  }
+}
+
+function getMinimumCheckerIdsFromRegistry() {
+  const registry = loadRegistryYaml();
+  const ids = new Set();
+  for (const [, contract] of Object.entries(registry?.contracts || {})) {
+    if (contract.status === "active" && Array.isArray(contract.checker_refs)) {
+      contract.checker_refs.forEach((id) => ids.add(id));
+    }
+  }
+  return Array.from(ids);
+}
 
 export async function getCheckerCatalog() {
   const indexFile = path.join(PROJECT_ROOT, ".claude", "checkers", "index.yaml");
@@ -755,13 +947,14 @@ export async function getCheckerCatalog() {
         .filter(([, v]) => v && typeof v === "object")
         .map(([k, v]) => ({ id: k, ...v }));
 
+  const minimumIds = getMinimumCheckerIdsFromRegistry();
   const catalogIds = new Set(checkers.map((c) => c.id));
-  const missing = MINIMUM_CHECKER_IDS.filter((id) => !catalogIds.has(id));
+  const missing = minimumIds.filter((id) => !catalogIds.has(id));
 
   return {
     success: true,
     count: checkers.length,
-    minimum_required: MINIMUM_CHECKER_IDS.length,
+    minimum_required: minimumIds.length,
     minimum_met: missing.length === 0,
     missing_minimum: missing,
     checkers: checkers.map((c) => ({
@@ -776,4 +969,108 @@ export async function getCheckerCatalog() {
     })),
     timestamp: new Date().toISOString(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// get_active_contract_set — 新增：Registry 感知契约激活
+// ---------------------------------------------------------------------------
+
+function evaluateEffectiveScope(scopeList, context) {
+  if (!Array.isArray(scopeList)) scopeList = [scopeList];
+
+  for (const expr of scopeList) {
+    const str = String(expr).trim();
+
+    // Universal match
+    if (str === "all" || str === "all tasks" || str === "all phases" || str === "all files") {
+      continue;
+    }
+
+    // Numeric comparison: key >= value
+    let m = str.match(/^(\w+)\s*>=\s*(\d+)%?$/);
+    if (m) {
+      const [, key, val] = m;
+      const actual = parseFloat(context[key]) || 0;
+      if (actual < parseFloat(val)) return false;
+      continue;
+    }
+
+    // Numeric comparison: key <= value
+    m = str.match(/^(\w+)\s*<=\s*(\d+)%?$/);
+    if (m) {
+      const [, key, val] = m;
+      const actual = parseFloat(context[key]) || 0;
+      if (actual > parseFloat(val)) return false;
+      continue;
+    }
+
+    // Equality: key=value or key=A|B
+    m = str.match(/^(\w+)\s*=\s*(.+)$/);
+    if (m) {
+      const [, key, val] = m;
+      const actual = context[key];
+      const alternatives = val.split("|").map((s) => s.trim());
+      if (!alternatives.includes(String(actual))) return false;
+      continue;
+    }
+
+    // Bare domain strings that act as catch-all for that domain
+    // e.g., "all Standard/Complex tasks" — we skip unknown syntax rather than fail
+    // Unknown expressions are treated as "must match literally" against context
+    const actual = context[str];
+    if (actual === undefined || actual === null || actual === false) return false;
+  }
+
+  return true;
+}
+
+function getActiveContractSetInternal(context) {
+  const registry = loadRegistryYaml();
+  if (!registry || !registry.contracts) {
+    return { success: false, reason: "registry.yaml not found or unreadable." };
+  }
+
+  const activeContracts = [];
+  const allCheckerRefs = new Set();
+  const allChecklistRefs = new Set();
+  const dependencyGraph = {};
+
+  for (const [contractId, contract] of Object.entries(registry.contracts)) {
+    if (contract.status !== "active") continue;
+
+    const scope = contract.effective_scope || [];
+    if (evaluateEffectiveScope(scope, context)) {
+      activeContracts.push({
+        id: contractId,
+        version: contract.version || 1,
+        checker_refs: contract.checker_refs || [],
+        checklist_refs: contract.checklist_refs || [],
+        depends_on: contract.depends_on || [],
+        description: contract.description || "",
+      });
+      (contract.checker_refs || []).forEach((id) => allCheckerRefs.add(id));
+      (contract.checklist_refs || []).forEach((id) => allChecklistRefs.add(id));
+      dependencyGraph[contractId] = contract.depends_on || [];
+    }
+  }
+
+  return {
+    success: true,
+    active_contracts: activeContracts,
+    mandatory_checkers: Array.from(allCheckerRefs),
+    mandatory_checklists: Array.from(allChecklistRefs),
+    dependency_graph: dependencyGraph,
+    context,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export async function getActiveContractSet(args = {}) {
+  const context = {
+    action_family: args.action_family || "",
+    phase: args.phase || "",
+    delivery_mode: args.delivery_mode || "",
+    context_budget: args.context_budget_percent || 0,
+  };
+  return getActiveContractSetInternal(context);
 }

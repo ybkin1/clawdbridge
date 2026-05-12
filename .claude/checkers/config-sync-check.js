@@ -1,0 +1,179 @@
+#!/usr/bin/env node
+// Checker: config-sync-check
+// Mode: automated
+// Scope: .claude/config/*.yaml, registry.yaml, checkers/index.yaml
+// Purpose: 验证 5 个核心配置维度的一致性（mechanical-conditions, phase-state-machine, registry, checkers/index, write-permissions, mcp-capabilities），防止规范与配置漂移
+
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { createRequire } from "module";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const yaml = require(path.join(__dirname, "..", "mcp-servers", "constraint-enforcer", "node_modules", "js-yaml", "index.js"));
+
+const PROJECT_ROOT = process.argv[2] || ".";
+
+function loadYaml(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return yaml.load(fs.readFileSync(filePath, "utf8"));
+  } catch (e) {
+    return null;
+  }
+}
+
+function extractYamlFromMarkdown(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const content = fs.readFileSync(filePath, "utf8");
+  const match = content.match(/```yaml\s*\n([\s\S]*?)\n```/);
+  if (match) {
+    try {
+      return yaml.load(match[1]);
+    } catch {}
+  }
+  try {
+    return yaml.load(content);
+  } catch {}
+  return null;
+}
+
+const errors = [];
+
+// ---------------------------------------------------------------------------
+// Check 1: mechanical-conditions.yaml 必须包含 task-tracking-workflow-spec.md
+//          §4.2.1 中定义的 8 项核心机械条件
+// ---------------------------------------------------------------------------
+const mcFile = path.join(PROJECT_ROOT, ".claude", "config", "mechanical-conditions.yaml");
+const mc = loadYaml(mcFile);
+if (!mc) {
+  errors.push("mechanical-conditions.yaml missing or unreadable");
+} else {
+  const coreIds = [
+    "phase_status_passed",
+    "gates_all_passed",
+    "primary_artifact_exists_nonempty",
+    "no_unresolved_blocker",
+    "dirty_hygiene_passed",
+    "state_freshness",
+    "mandatory_checkers_passed_or_excepted",
+    "auditor_verdict_audited",
+  ];
+  const actualIds = (mc.conditions || []).map((c) => c.id);
+  for (const id of coreIds) {
+    if (!actualIds.includes(id)) {
+      errors.push(`mechanical-conditions.yaml missing core condition: ${id}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 2: phase-state-machine.yaml 的 gates 映射必须与
+//          task-tracking-workflow-spec.md §4.3 一致
+// ---------------------------------------------------------------------------
+const psmFile = path.join(PROJECT_ROOT, ".claude", "config", "phase-state-machine.yaml");
+const psm = loadYaml(psmFile);
+if (!psm) {
+  errors.push("phase-state-machine.yaml missing or unreadable");
+} else {
+  const expected = {
+    clarify: [],
+    research: ["professional"],
+    "architecture-decomposition": ["professional", "contract"],
+    spec: ["value", "professional", "contract"],
+    design: ["professional", "contract"],
+    plan: ["professional"],
+    build: ["professional", "contract"],
+    verify: ["professional", "contract"],
+    acceptance: ["value", "professional", "contract"],
+    "release-ready": ["contract"],
+  };
+  for (const [phase, expectedGates] of Object.entries(expected)) {
+    const pdef = psm.phases?.find((p) => p.id === phase);
+    if (!pdef) {
+      errors.push(`phase-state-machine.yaml missing phase: ${phase}`);
+      continue;
+    }
+    const actualGates = pdef.gates || [];
+    const missing = expectedGates.filter((g) => !actualGates.includes(g));
+    const extra = actualGates.filter((g) => !expectedGates.includes(g));
+    if (missing.length > 0) {
+      errors.push(`phase '${phase}' missing gates: ${missing.join(", ")}`);
+    }
+    if (extra.length > 0) {
+      errors.push(`phase '${phase}' unexpected gates: ${extra.join(", ")}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 3: registry.yaml 中所有 active contract 的 checker_refs 必须在
+//          checkers/index.yaml 中有定义
+// ---------------------------------------------------------------------------
+const registry = extractYamlFromMarkdown(
+  path.join(PROJECT_ROOT, ".claude", "contracts", "registry.yaml")
+);
+const index = loadYaml(path.join(PROJECT_ROOT, ".claude", "checkers", "index.yaml"));
+
+if (!registry) {
+  errors.push("registry.yaml missing or unreadable");
+}
+if (!index) {
+  errors.push("checkers/index.yaml missing or unreadable");
+}
+
+if (registry && index) {
+  const indexIds = new Set(Object.keys(index.checkers || {}));
+  for (const [cid, contract] of Object.entries(registry.contracts || {})) {
+    if (contract.status !== "active") continue;
+    const refs = contract.checker_refs || [];
+    for (const ref of refs) {
+      if (!indexIds.has(ref)) {
+        errors.push(`registry contract '${cid}' references unknown checker: ${ref}`);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 4: write-permissions.yaml 必须包含所有关键敏感文件模式
+// ---------------------------------------------------------------------------
+const wpFile = path.join(PROJECT_ROOT, ".claude", "config", "write-permissions.yaml");
+const wp = loadYaml(wpFile);
+if (!wp) {
+  errors.push("write-permissions.yaml missing or unreadable");
+} else {
+  const requiredPatterns = ["state_file", "evidence_lock", "checker_result", "receipt"];
+  const actualNames = (wp.sensitive_patterns || []).map((p) => p.name);
+  for (const name of requiredPatterns) {
+    if (!actualNames.includes(name)) {
+      errors.push(`write-permissions.yaml missing sensitive_pattern: ${name}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 5: mcp-capabilities.yaml 必须声明 manual_gate_pending_policy
+// ---------------------------------------------------------------------------
+const capsFile = path.join(PROJECT_ROOT, ".claude", "config", "mcp-capabilities.yaml");
+const caps = loadYaml(capsFile);
+if (!caps) {
+  errors.push("mcp-capabilities.yaml missing or unreadable");
+} else {
+  if (!caps.behavior?.manual_gate_pending_policy) {
+    errors.push("mcp-capabilities.yaml missing behavior.manual_gate_pending_policy");
+  }
+}
+
+// Output
+if (errors.length > 0) {
+  console.log("FAILED: config-sync-check");
+  for (const e of errors) {
+    console.log(`  ERROR: ${e}`);
+  }
+  process.exit(1);
+}
+
+console.log("PASSED: config-sync-check — all config sources are consistent");
+process.exit(0);

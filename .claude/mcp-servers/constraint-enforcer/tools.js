@@ -110,10 +110,37 @@ export const toolDefinitions = [
   {
     name: "get_checker_catalog",
     description:
-      "Return the full catalog of available checkers from checkers/index.yaml, including metadata, output schema, and implementation status.",
+      "Return the full catalog of available checkers from checkers/index.yaml, including metadata, output schema, and implementation status. Minimum checker list is derived dynamically from registry.yaml (no hardcoding).",
     inputSchema: {
       type: "object",
       properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "get_active_contract_set",
+    description:
+      "Query the contract registry to determine which contracts are active for a given context (action_family, phase, delivery_mode). Returns active contracts, mandatory checkers, checklists, and dependency graph. If no context provided, uses the active task's state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action_family: {
+          type: "string",
+          description: "The action_family to match against contract effective_scope.",
+        },
+        phase: {
+          type: "string",
+          description: "The current phase to match against contract effective_scope.",
+        },
+        delivery_mode: {
+          type: "string",
+          description: "The delivery_mode to match against contract effective_scope (full, quick, advisory).",
+        },
+        context_budget_percent: {
+          type: "number",
+          description: "Current context budget percentage for threshold-based contract activation.",
+        },
+      },
       required: [],
     },
   },

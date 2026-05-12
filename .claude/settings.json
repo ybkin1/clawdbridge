@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "constraint-enforcer": {
+      "command": "node",
+      "args": [
+        ".claude/mcp-servers/constraint-enforcer/index.js"
+      ]
+    }
+  },
+  "hooks": {
+    "PreToolUse": ".claude/hooks/pre-tool-use-orchestrator.ps1"
+  }
+}

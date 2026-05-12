@@ -1,0 +1,72 @@
+# mcp-capabilities.yaml — MCP 能力边界声明
+#
+# 目的：显式定义哪些约束检查可由 MCP 自动化，哪些必须人工/Agent 判断
+# 维护者：规范架构维护者
+# 消费方：MCP constraint-enforcer, Agent 编排逻辑
+
+version: 1
+updated_at: "2026-05-12"
+
+# MCP 可完全自动化的检查类型
+automatable:
+  - id: field_equals
+    description: "字段值精确匹配"
+  - id: field_not_equals
+    description: "字段值不等于某值"
+  - id: field_empty_or_null
+    description: "字段为空或 null"
+  - id: gate_results_all_passed
+    description: "所有 gate 结果通过"
+  - id: file_exists_and_size_gt_0
+    description: "文件存在且非空"
+  - id: timestamp_freshness
+    description: "时间戳新鲜度"
+  - id: checker_result_status
+    description: "Checker 结果状态"
+  - id: evidence_lock_exists
+    description: "Evidence lock 存在性"
+  - id: mandatory_checkers_all_passed_or_excepted
+    description: "Mandatory checkers 全部通过或豁免"
+
+# 必须由人工或高阶 Agent 判断的检查（MCP 只记录，不阻断）
+manual_only:
+  - id: value_gate_review
+    description: "需要判断产出对用户是否有价值"
+    reason: "涉及主观判断，无法形式化"
+
+  - id: professional_gate_review
+    description: "需要判断设计/实现是否合理"
+    reason: "涉及专业经验和创造性评估"
+
+  - id: architecture_decomposition
+    description: "需要创造性拆包"
+    reason: "架构设计不可机械推导"
+
+  - id: exception_approval
+    description: "需要判断异常是否可豁免"
+    reason: "豁免决策需综合上下文"
+
+# 混合型：MCP 可做部分检查，剩余需人工
+hybrid:
+  - id: context_budget_compression
+    automated_part: "检查是否超过 55%/70%/85% 阈值"
+    manual_part: "决定具体压缩策略和保留内容"
+
+  - id: code_quality_review
+    automated_part: "检查是否满足 packet-size-check、code-packet-annotation-check"
+    manual_part: "判断代码设计质量、算法选择"
+
+# 对 MCP 的行为指导
+behavior:
+  # 当 mechanical conditions 全部满足但存在 manual gates 时
+  manual_gate_pending_policy:
+    block_transition: false
+    emit_warning: true
+    require_explicit_ack: true
+    ack_field: "manual_gates_acknowledged"
+
+  # 当 MCP 遇到超出 automatable 列表的 check_type 时
+  unknown_check_type_policy:
+    fallback_status: "manual_review_required"
+    log_warning: true
+    do_not_block: true

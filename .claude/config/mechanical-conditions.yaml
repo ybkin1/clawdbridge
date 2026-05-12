@@ -1,0 +1,106 @@
+# mechanical-conditions.yaml — 规范架构机械条件的机器可读配置
+#
+# 来源：task-tracking-workflow-spec.md §4.2.1
+# 维护者：规范架构维护者
+# 消费方：MCP constraint-enforcer
+# 原则：新增/修改机械条件只需更新本文件，MCP 零代码改动自动生效
+#
+# check_type 说明：
+#   field_equals          — 字段值等于 expected
+#   field_not_equals      — 字段值不等于 expected（soft blocker 用）
+#   field_empty_or_null   — 字段为空/null/""/'""'/"null"
+#   gate_results_all_passed — target 中以 field_prefix 开头的所有对象，status 均为 passed
+#   file_exists_and_size_gt_0 — target 字段值作为相对路径，文件存在且 size > 0
+#   timestamp_freshness   — state_field 时间戳晚于 reference_field 对应文件的 mtime
+#   checker_result_status — checkers/ 目录下包含 checker_id 的结果文件，status 为 expected
+#   mandatory_checkers_all_passed_or_excepted — target 中 field 列表的 checker 全部 passed/excepted
+#   evidence_lock_exists  — checkers/evidence-lock-<phase>.yaml 存在
+
+version: 1
+updated_at: "2026-05-12"
+
+conditions:
+  - id: phase_status_passed
+    source: "task-tracking-workflow-spec.md §4.2.1-1"
+    description: "当前 phase 的 phase_status = passed"
+    check_type: "field_equals"
+    target: "00-task-state.yaml"
+    field: "phase_status"
+    expected: "passed"
+    blocker_level: "hard"
+
+  - id: gates_all_passed
+    source: "task-tracking-workflow-spec.md §4.2.1-2"
+    description: "当前 phase 对应的 gate 全部通过"
+    check_type: "gate_results_all_passed"
+    target: "00-task-state.yaml"
+    field_prefix: "gate_"
+    blocker_level: "hard"
+
+  - id: primary_artifact_exists_nonempty
+    source: "task-tracking-workflow-spec.md §4.2.1-3"
+    description: "主产出 artifact 存在且非空"
+    check_type: "file_exists_and_size_gt_0"
+    target: "00-task-state.yaml"
+    field: "current_primary_artifact"
+    blocker_level: "hard"
+
+  - id: no_unresolved_blocker
+    source: "task-tracking-workflow-spec.md §4.2.1-4"
+    description: "无 unresolved blocker"
+    check_type: "field_empty_or_null"
+    target: "00-task-state.yaml"
+    field: "last_blocker_report"
+    blocker_level: "hard"
+
+  - id: dirty_hygiene_passed
+    source: "task-tracking-workflow-spec.md §4.2.1-5"
+    description: "脏数据/脏链路已清理"
+    check_type: "checker_result_status"
+    target: "checkers/"
+    checker_id: "dirty-hygiene-closure-check"
+    expected: "passed"
+    blocker_level: "hard"
+
+  - id: state_freshness
+    source: "task-tracking-workflow-spec.md §4.2.1-6"
+    description: "updated_at 晚于主产出最后修改时间"
+    check_type: "timestamp_freshness"
+    target: "00-task-state.yaml"
+    state_field: "updated_at"
+    reference_field: "current_primary_artifact"
+    blocker_level: "hard"
+
+  - id: mandatory_checkers_passed_or_excepted
+    source: "task-tracking-workflow-spec.md §4.2.1-7"
+    description: "强制检查器全部通过或有已批准异常"
+    check_type: "mandatory_checkers_all_passed_or_excepted"
+    target: "route-projection.yaml"
+    field: "mandatory_checkers"
+    blocker_level: "hard"
+
+  - id: auditor_verdict_audited
+    source: "task-tracking-workflow-spec.md §4.2.1-8"
+    description: "Auditor 验证通过"
+    check_type: "field_equals"
+    target: "00-task-state.yaml"
+    field: "auditor_verdict"
+    expected: "audited"
+    blocker_level: "hard"
+
+  - id: evidence_lock_exists
+    source: "task-tracking-workflow-spec.md §4.5"
+    description: "Evidence lock 存在（clarify 阶段豁免）"
+    check_type: "evidence_lock_exists"
+    target: "checkers/"
+    exempt_phases: ["clarify"]
+    blocker_level: "hard"
+
+  - id: closeout_not_already_allowed
+    source: "task-tracking-workflow-spec.md §12"
+    description: "closeout_allowed 不能已经为 true"
+    check_type: "field_not_equals"
+    target: "00-task-state.yaml"
+    field: "closeout_allowed"
+    expected: true
+    blocker_level: "soft"

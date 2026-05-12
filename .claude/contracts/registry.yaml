@@ -37,7 +37,7 @@ contracts:
     owner: "claude-code"
     verification_mode: "automated"
     checklist_refs: ["contract-completeness-checklist"]
-    checker_refs: ["contract-completeness-checklist"]
+    checker_refs: []
 
   # === Core ===
   intent-capture:

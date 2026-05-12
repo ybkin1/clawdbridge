@@ -256,3 +256,17 @@ checkers:
       method: "运行类型检查器（tsc/mypy/go build）并人工核对跨模块接口"
       evidence_format: "类型检查报告 + 关键函数签名比对表"
       minimum_requirement: "类型检查零错误，函数签名与 §14 伪代码一致"
+
+  # === 配置一致性 Checker (1个) ===
+  config-sync-check:
+    script: config-sync-check.sh
+    mode: automated
+    scope: .claude/config/*.yaml, registry.yaml, checkers/index.yaml
+    gate_binding: contract
+    contracts: [task-tracking, verification-checker]
+    stage: []
+    description: "规范与配置层是否同步（机械条件、phase-gate 映射、checker_refs）"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false

@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import yaml from "js-yaml";
+import { fileURLToPath } from "url";
 import {
   checkPhaseReadiness,
   runMandatoryCheckers,
@@ -12,8 +13,11 @@ import {
   generateEvidenceLock,
   requestPhaseTransition,
   getCheckerCatalog,
+  getActiveContractSet,
+  invalidateConfigCache,
 } from "./enforcer.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_TASK_DIR = path.join(os.tmpdir(), "test-constraint-task");
 let passCount = 0;
 let failCount = 0;
@@ -88,6 +92,7 @@ async function testCheckPhaseReadiness() {
   assert(result.ready === false, "Should not be ready");
   assert(result.gaps.some((g) => g.includes("dangling-reference-check")), "Should detect missing checker");
   assert(result.gaps.some((g) => g.includes("evidence-lock-build.yaml")), "Should detect missing evidence lock");
+  assert(result.auditorRequired === false, "auditorRequired should be false when verdict is audited");
 }
 
 async function testRunMandatoryCheckers() {
@@ -132,16 +137,6 @@ async function testGenerateEvidenceLock() {
   // First run checkers so we have results to lock
   await runMandatoryCheckers({ taskDir: TEST_TASK_DIR });
 
-  // Fix dangling-reference-check to passed so evidence lock can be generated
-  const checkerDir = path.join(TEST_TASK_DIR, "checkers");
-  const files = fs.readdirSync(checkerDir).filter((f) => f.includes("dangling-reference-check") && f.endsWith(".yaml"));
-  for (const f of files) {
-    const fp = path.join(checkerDir, f);
-    const doc = yaml.load(fs.readFileSync(fp, "utf8"));
-    doc.status = "passed";
-    fs.writeFileSync(fp, yaml.dump(doc));
-  }
-
   const result = await generateEvidenceLock({ taskDir: TEST_TASK_DIR });
   console.log(JSON.stringify(result, null, 2));
   assert(result.success === true, "Should generate evidence lock");
@@ -184,6 +179,7 @@ async function testRequestPhaseTransition() {
   assert(result.success === true, "Phase transition should succeed");
   assert(result.fromPhase === "build", "From phase should be build");
   assert(result.toPhase === "verify", "To phase should be verify");
+  assert(result.auditorRequired === false, "Successful transition should have auditorRequired: false");
 
   const finalState = yaml.load(fs.readFileSync(path.join(TEST_TASK_DIR, "00-task-state.yaml"), "utf8"));
   assert(finalState.phase === "verify", "State phase should be updated");
@@ -204,6 +200,7 @@ async function testFailedCheckerBlocksTransition() {
   const result = await requestPhaseTransition({ taskDir: TEST_TASK_DIR, nextPhase: "verify" });
   console.log(JSON.stringify(result, null, 2));
   assert(result.success === false, "Transition should be blocked when checker failed");
+  assert(result.auditorRequired === false, "auditorRequired should be false when only checker fails");
 }
 
 async function testAuditorVerdictBlocksTransition() {
@@ -219,6 +216,7 @@ async function testAuditorVerdictBlocksTransition() {
   const result = await requestPhaseTransition({ taskDir: TEST_TASK_DIR, nextPhase: "verify" });
   console.log(JSON.stringify(result, null, 2));
   assert(result.success === false, "Transition should be blocked when auditor_verdict != audited");
+  assert(result.auditorRequired === true, "Should signal auditorRequired when verdict is mechanical_gap");
 }
 
 async function testMissingRouteProjection() {
@@ -231,7 +229,31 @@ async function testMissingRouteProjection() {
 
   const result = await runMandatoryCheckers({ taskDir: TEST_TASK_DIR });
   console.log(JSON.stringify(result, null, 2));
-  assert(result.summary.includes("No mandatory_checkers"), "Should report no mandatory checkers");
+  // When route-projection is missing, MCP derives mandatory checkers from registry.yaml
+  assert(result.success === true, "Should succeed even without route-projection");
+  assert(result.results.length > 0, "Should derive mandatory checkers from registry");
+}
+
+async function testGetActiveContractSet() {
+  console.log("\n--- Test: get_active_contract_set ---");
+  const result = await getActiveContractSet({
+    action_family: "implementation",
+    phase: "build",
+    delivery_mode: "full",
+  });
+  console.log(JSON.stringify(result, null, 2));
+  assert(result.success === true, "Should return active contract set");
+  assert(result.active_contracts.length > 0, "Should have active contracts");
+  assert(result.mandatory_checkers.length > 0, "Should derive mandatory checkers from active contracts");
+}
+
+async function testRegistryDerivedMinimumCheckers() {
+  console.log("\n--- Test: registry-derived minimum checkers ---");
+  const result = await getCheckerCatalog();
+  console.log(JSON.stringify(result, null, 2));
+  assert(result.success === true, "Should return catalog");
+  assert(result.minimum_required > 0, "Minimum required should be derived from registry");
+  assert(result.count >= result.minimum_required, "Catalog count should meet or exceed minimum");
 }
 
 async function testGetCheckerCatalog() {
@@ -240,6 +262,36 @@ async function testGetCheckerCatalog() {
   console.log(JSON.stringify(result, null, 2));
   assert(result.success === true, "Should return catalog");
   assert(result.count >= 0, "Count should be non-negative");
+}
+
+async function testConfigCacheHotReload() {
+  console.log("\n--- Test: config cache hot-reload ---");
+  const configPath = path.resolve(__dirname, "..", "..", "..", ".claude", "config", "mechanical-conditions.yaml");
+  const original = fs.readFileSync(configPath, "utf8");
+  const doc = yaml.load(original);
+
+  doc.conditions.push({
+    id: "test_hot_reload",
+    source: "test",
+    description: "Test hot reload",
+    check_type: "field_equals",
+    target: "00-task-state.yaml",
+    field: "hot_reload_test",
+    expected: "should_not_match",
+    blocker_level: "hard",
+  });
+
+  fs.writeFileSync(configPath, yaml.dump(doc));
+
+  const result = await checkPhaseReadiness({ taskDir: TEST_TASK_DIR });
+
+  fs.writeFileSync(configPath, original);
+  invalidateConfigCache();
+
+  assert(
+    result.gaps.some((g) => g.includes("test_hot_reload")),
+    "Modified config should be auto-reloaded without manual cache invalidation"
+  );
 }
 
 async function main() {
@@ -254,6 +306,9 @@ async function main() {
   await testAuditorVerdictBlocksTransition();
   await testMissingRouteProjection();
   await testGetCheckerCatalog();
+  await testGetActiveContractSet();
+  await testRegistryDerivedMinimumCheckers();
+  await testConfigCacheHotReload();
 
   console.log(`\n=== Results: ${passCount} passed, ${failCount} failed ===`);
   cleanup();

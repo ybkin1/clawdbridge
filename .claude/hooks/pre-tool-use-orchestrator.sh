@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
-# pre-tool-use-orchestrator.sh — Phase 1: Precise blocking (sensitive-file-level)
-# Phase 2+ simplified: outputs MCP tool suggestions instead of auto-running checkers
+# pre-tool-use-orchestrator.sh — Phase 4: Config-driven thin hook.
+# Delegates sensitivity checks to MCP enforcer helper.
+# Falls back to legacy hardcoded logic if helper is unavailable.
 #
-# Blocking policy:
-#   - Write/Edit to 00-task-state.yaml with phase_status: passed/archived  -> BLOCK
-#   - Write/Edit to 00-task-state.yaml with closeout_allowed: true         -> BLOCK
-#   - Write to evidence-lock-*.yaml                                         -> BLOCK
-#   - Write to checkers/*.yaml (checker results)                            -> BLOCK
-#   - Write to reviews/receipt-*.yaml                                       -> BLOCK
-#   - All other operations (Read, Grep, Glob, code edits)                   -> PASS
-#
-# On block: outputs MCP tool fix suggestions, then exits 1.
+# Architecture: Hook reads .claude/config/write-permissions.yaml (via Node helper)
+#               → shares config with MCP constraint-enforcer → no redundant rules.
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Capture stdin
 STDIN=$(cat)
@@ -22,89 +18,49 @@ TOOL_NAME=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin);
 FILE_PATH=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin); ti=d.get("tool_input",{}); print(ti.get("file_path",""))' 2>/dev/null || echo "")
 NEW_CONTENT=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin); ti=d.get("tool_input",{}); print(ti.get("content",ti.get("new_string","")))' 2>/dev/null || echo "")
 
-# Normalize path
-NORM_PATH=$(echo "$FILE_PATH" | tr '\\' '/')
-
-# Determine if blocking is needed
-SHOULD_BLOCK=false
-BLOCK_REASON=""
-
-if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" ]] && [ -n "$NORM_PATH" ]; then
-    # Phase transition attempt
-    if echo "$NORM_PATH" | grep -qE '00-task-state\.yaml$'; then
-        if echo "$NEW_CONTENT" | grep -qE 'phase_status\s*:\s*(passed|archived)'; then
-            SHOULD_BLOCK=true
-            BLOCK_REASON="phase_transition"
-        fi
-        if echo "$NEW_CONTENT" | grep -qE 'closeout_allowed\s*:\s*true'; then
-            SHOULD_BLOCK=true
-            BLOCK_REASON="closeout"
-        fi
-    fi
-
-    # Evidence lock write
-    if echo "$NORM_PATH" | grep -qE 'evidence-lock-.*\.yaml$'; then
-        SHOULD_BLOCK=true
-        BLOCK_REASON="evidence_lock"
-    fi
-
-    # Checker result write (exclude evidence-lock files)
-    if echo "$NORM_PATH" | grep -qE 'checkers/[^/]+\.yaml$' && ! echo "$NORM_PATH" | grep -qE 'evidence-lock'; then
-        SHOULD_BLOCK=true
-        BLOCK_REASON="checker_result"
-    fi
-
-    # Receipt write
-    if echo "$NORM_PATH" | grep -qE 'reviews/receipt-.*\.yaml$'; then
-        SHOULD_BLOCK=true
-        BLOCK_REASON="receipt"
-    fi
+# Only intercept Write/Edit
+if [[ "$TOOL_NAME" != "Write" && "$TOOL_NAME" != "Edit" ]] || [ -z "$FILE_PATH" ]; then
+    exit 0
 fi
 
-# If not a blocking operation, exit cleanly
-[ "$SHOULD_BLOCK" = false ] && exit 0
+# ---------------------------------------------------------------------------
+# Primary: Call MCP enforcer helper (config-driven)
+# ---------------------------------------------------------------------------
+HELPER_PATH="${SCRIPT_DIR}/hook-enforcer-helper.js"
+MCP_ALLOWED=""
+MCP_REASON=""
 
-# Sensitive operation detected: run checker reminder + output MCP suggestions
-echo ""
-echo "!!! PRE-TOOL BLOCKING CHECK TRIGGERED !!!"
-echo "Operation: ${TOOL_NAME} -> ${FILE_PATH}"
-echo "Block reason: ${BLOCK_REASON}"
-echo "-------------------------------------------"
+if [ -f "$HELPER_PATH" ]; then
+    HELPER_INPUT=$(python3 -c "import json,sys; print(json.dumps({'file_path':sys.argv[1],'operation':sys.argv[2],'newContent':sys.argv[3]}))" "$FILE_PATH" "$TOOL_NAME" "$NEW_CONTENT" 2>/dev/null || echo "{}")
+    HELPER_OUTPUT=$(echo "$HELPER_INPUT" | node "$HELPER_PATH" 2>/dev/null || echo "{}")
+    MCP_ALLOWED=$(echo "$HELPER_OUTPUT" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("true" if d.get("allowed",True) else "false")' 2>/dev/null || echo "true")
+    MCP_REASON=$(echo "$HELPER_OUTPUT" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("reason",""))' 2>/dev/null || echo "")
+fi
 
-# Run checker reminder
-REMINDER_SCRIPT="${PWD}/.claude/hooks/checker-reminder.sh"
-if [ ! -f "$REMINDER_SCRIPT" ]; then
-    echo "[WARNING] checker-reminder.sh not found. Cannot verify mechanical gaps."
-    echo "[BLOCKED] Conservative block applied."
+if [ "$MCP_ALLOWED" = "false" ]; then
+    echo ""
+    echo "!!! PRE-TOOL BLOCKING CHECK TRIGGERED !!!"
+    echo "Operation: ${TOOL_NAME} -> ${FILE_PATH}"
+    echo "Block reason: ${MCP_REASON}"
+    echo "[BLOCKED] Operation blocked."
     echo "!!!"
     echo ""
     exit 1
 fi
 
-REMINDER_OUTPUT=$(echo "$STDIN" | bash "$REMINDER_SCRIPT" 2>/dev/null || echo "")
-
-if ! echo "$REMINDER_OUTPUT" | grep -q "MECHANICAL GAP DETECTED"; then
-    echo "[PASS] No mechanical gaps detected. Proceeding."
-    echo "!!!"
-    echo ""
+if [ "$MCP_ALLOWED" = "true" ]; then
+    # MCP helper explicitly allowed; proceed
     exit 0
 fi
 
-echo "$REMINDER_OUTPUT"
-
-# Output MCP tool suggestions
+# ---------------------------------------------------------------------------
+# Fallback: MCP helper unavailable — block all Write/Edit
+# ---------------------------------------------------------------------------
 echo ""
-echo "[MCP FIX SUGGESTION] You can resolve gaps by calling the constraint-enforcer MCP tools:"
-echo "  1. check_phase_readiness    — identify all mechanical gaps"
-echo "  2. run_mandatory_checkers   — auto-run missing checkers"
-echo "  3. generate_evidence_lock   — lock evidence for current phase"
-echo "  4. request_phase_transition — validate and perform phase transition"
-echo "-------------------------------------------"
-
-echo ""
-echo "[BLOCKED] Operation blocked due to unresolved mechanical gaps."
-echo "Fix remaining issues (via MCP tools above) and retry the ${TOOL_NAME} operation."
+echo "!!! PRE-TOOL BLOCKING CHECK TRIGGERED !!!"
+echo "Operation: ${TOOL_NAME} -> ${FILE_PATH}"
+echo "Block reason: MCP enforcer helper unavailable or returned no result."
+echo "[BLOCKED] All Write/Edit operations require MCP constraint enforcement."
 echo "!!!"
 echo ""
-
 exit 1

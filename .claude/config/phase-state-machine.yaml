@@ -1,0 +1,63 @@
+# phase-state-machine.yaml — Phase 状态机的机器可读配置
+#
+# 来源：task-tracking-workflow-spec.md §4.1, §4.3
+# 维护者：规范架构维护者
+# 消费方：MCP constraint-enforcer
+
+version: 1
+updated_at: "2026-05-12"
+
+phases:
+  - id: clarify
+    next: research
+    gates: []
+    evidence_lock_required: false
+
+  - id: research
+    next: architecture-decomposition
+    gates: [professional]
+    evidence_lock_required: true
+
+  - id: architecture-decomposition
+    next: spec
+    gates: [professional, contract]
+    evidence_lock_required: true
+
+  - id: spec
+    next: design
+    gates: [value, professional, contract]
+    evidence_lock_required: true
+
+  - id: design
+    next: plan
+    gates: [professional, contract]
+    evidence_lock_required: true
+
+  - id: plan
+    next: build
+    gates: [professional]
+    evidence_lock_required: true
+
+  - id: build
+    next: verify
+    gates: [professional, contract]
+    evidence_lock_required: true
+
+  - id: verify
+    next: acceptance
+    gates: [professional, contract]
+    evidence_lock_required: true
+
+  - id: acceptance
+    next: release-ready
+    gates: [value, professional, contract]
+    evidence_lock_required: true
+
+  - id: release-ready
+    next: null
+    gates: [contract]
+    evidence_lock_required: true
+
+# 若 next 为 null，表示终态，不再自动推进
+# fallback_next 保留用于 request_phase_transition 未指定 nextPhase 时的默认行为
+fallback_next: "sequential"

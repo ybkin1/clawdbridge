@@ -1,17 +1,9 @@
 # pre-tool-use-orchestrator.ps1
-# Phase 1: Precise blocking (sensitive-file-level)
-# Phase 2+ simplified: outputs MCP tool suggestions instead of auto-running checkers
+# Phase 4: Config-driven thin hook. Delegates sensitivity checks to MCP enforcer helper.
+# Falls back to legacy hardcoded logic if helper is unavailable.
 #
-# Blocking policy:
-#   - Write/Edit to 00-task-state.yaml with phase_status: passed/archived  -> BLOCK
-#   - Write/Edit to 00-task-state.yaml with closeout_allowed: true         -> BLOCK
-#   - Write to evidence-lock-*.yaml                                         -> BLOCK
-#   - Write to checkers/*.yaml (checker results)                            -> BLOCK
-#   - Write to reviews/receipt-*.yaml                                       -> BLOCK
-#   - All other operations (Read, Grep, Glob, code edits)                   -> PASS
-#
-# On block: outputs MCP tool fix suggestions, then exits 1.
-# Does NOT modify any clawd-on-desk files.
+# Architecture: Hook reads .claude/config/write-permissions.yaml (via Node helper)
+#               → shares config with MCP constraint-enforcer → no redundant rules.
 
 param()
 
@@ -25,10 +17,13 @@ $stdin = $input | Out-String
 # ---------------------------------------------------------------------------
 # 2. clawd-on-desk state update (always run first, never block)
 # ---------------------------------------------------------------------------
-$stdin | powershell -NoProfile -File "C:\Users\Administrator\Documents\trae_projects\yb\clawd-on-desk-main\hooks\clawd-node-wrapper.ps1" PreToolUse
+$clawdPath = Join-Path $PSScriptRoot "..\..\clawd-on-desk-main\hooks\clawd-node-wrapper.ps1"
+if (Test-Path $clawdPath) {
+    $stdin | powershell -NoProfile -File $clawdPath PreToolUse
+}
 
 # ---------------------------------------------------------------------------
-# 3. Parse PreToolUse payload to determine tool and target
+# 3. Parse PreToolUse payload
 # ---------------------------------------------------------------------------
 $toolName    = ""
 $targetPath  = ""
@@ -44,99 +39,64 @@ try {
         if ($payload.tool_input.new_string){ $newContent = $payload.tool_input.new_string }
     }
 } catch {
-    # Unparseable payload - cannot determine sensitivity, pass through safely
-    exit 0
+    Write-Output ""
+    Write-Output "!!! PRE-TOOL BLOCKING CHECK TRIGGERED !!!"
+    Write-Output "Operation: $toolName -> $targetPath"
+    Write-Output "Block reason: Failed to parse PreToolUse payload."
+    Write-Output "[BLOCKED] Operation blocked."
+    exit 1
 }
 
-# ---------------------------------------------------------------------------
-# 4. Determine if this is a blocking-sensitive operation
-# ---------------------------------------------------------------------------
+# Only intercept Write/Edit operations
 $isWriteOrEdit = $toolName -in @("Write", "Edit")
-$shouldBlock   = $false
-$blockReason   = ""
-
-if ($isWriteOrEdit -and $targetPath) {
-    $normPath = $targetPath -replace "\\", "/"
-
-    # 4a. Phase transition: attempting to mark phase as passed/archived or closeout
-    if ($normPath -match "00-task-state\.yaml") {
-        if ($newContent -match "phase_status\s*:\s*(passed|archived)") {
-            $shouldBlock = $true
-            $blockReason = "phase_transition"
-        }
-        if ($newContent -match "closeout_allowed\s*:\s*true") {
-            $shouldBlock = $true
-            $blockReason = "closeout"
-        }
-    }
-
-    # 4b. Evidence lock write
-    if ($normPath -match "evidence-lock-.*\.yaml") {
-        $shouldBlock = $true
-        $blockReason = "evidence_lock"
-    }
-
-    # 4c. Checker result write (exclude evidence-lock files, handled in 4b)
-    if ($normPath -match "checkers/[^/]+\.yaml$" -and -not ($normPath -match "evidence-lock")) {
-        $shouldBlock = $true
-        $blockReason = "checker_result"
-    }
-
-    # 4d. Receipt write
-    if ($normPath -match "reviews/receipt-.*\.yaml") {
-        $shouldBlock = $true
-        $blockReason = "receipt"
-    }
-}
-
-# If not a blocking operation, exit cleanly immediately
-if (-not $shouldBlock) {
+if (-not $isWriteOrEdit -or -not $targetPath) {
     exit 0
 }
 
 # ---------------------------------------------------------------------------
-# 5. Sensitive operation detected: run checker reminder + output MCP suggestions
+# 4. Primary: Call MCP enforcer helper (config-driven)
+# ---------------------------------------------------------------------------
+$helperPath = Join-Path $PSScriptRoot "hook-enforcer-helper.js"
+$mcpResult = $null
+
+if (Test-Path $helperPath) {
+    try {
+        $helperInput = @{
+            filePath   = $targetPath
+            operation  = $toolName
+            newContent = $newContent
+        } | ConvertTo-Json -Compress
+
+        $helperOutput = $helperInput | & node $helperPath 2>$null | Out-String
+        $mcpResult = $helperOutput | ConvertFrom-Json
+    } catch {
+        $mcpResult = $null
+    }
+}
+
+if ($mcpResult -ne $null) {
+    if (-not $mcpResult.allowed) {
+        Write-Output ""
+        Write-Output "!!! PRE-TOOL BLOCKING CHECK TRIGGERED !!!"
+        Write-Output "Operation: $toolName -> $targetPath"
+        Write-Output "Block reason: $($mcpResult.reason)"
+        Write-Output "[BLOCKED] Operation blocked."
+        Write-Output "!!!"
+        Write-Output ""
+        exit 1
+    }
+    # MCP allowed: proceed
+    exit 0
+}
+
+# ---------------------------------------------------------------------------
+# 5. Fallback: MCP helper unavailable — block all Write/Edit
 # ---------------------------------------------------------------------------
 Write-Output ""
 Write-Output "!!! PRE-TOOL BLOCKING CHECK TRIGGERED !!!"
 Write-Output "Operation: $toolName -> $targetPath"
-Write-Output "Block reason: $blockReason"
-Write-Output "-------------------------------------------"
-
-# 5a. Run checker reminder to identify gaps
-$reminderScript = "C:\Users\Administrator\Documents\trae_projects\yb\.claude\hooks\checker-reminder.ps1"
-if (-not (Test-Path $reminderScript)) {
-    Write-Output "[WARNING] checker-reminder.ps1 not found. Cannot verify mechanical gaps."
-    Write-Output "[BLOCKED] Conservative block applied."
-    Write-Output "!!!"
-    Write-Output ""
-    exit 1
-}
-
-$reminderOutput = $stdin | powershell -NoProfile -File $reminderScript | Out-String
-
-if (-not ($reminderOutput -match "MECHANICAL GAP DETECTED")) {
-    Write-Output "[PASS] No mechanical gaps detected. Proceeding."
-    Write-Output "!!!"
-    Write-Output ""
-    exit 0
-}
-
-Write-Output $reminderOutput
-
-# 5b. Output MCP tool suggestions
-Write-Output ""
-Write-Output "[MCP FIX SUGGESTION] You can resolve gaps by calling the constraint-enforcer MCP tools:"
-Write-Output "  1. check_phase_readiness    - identify all mechanical gaps"
-Write-Output "  2. run_mandatory_checkers   - auto-run missing checkers"
-Write-Output "  3. generate_evidence_lock   - lock evidence for current phase"
-Write-Output "  4. request_phase_transition - validate and perform phase transition"
-Write-Output "-------------------------------------------"
-
-Write-Output ""
-Write-Output "[BLOCKED] Operation blocked due to unresolved mechanical gaps."
-Write-Output "Fix remaining issues (via MCP tools above) and retry the $toolName operation."
+Write-Output "Block reason: MCP enforcer helper unavailable or returned no result."
+Write-Output "[BLOCKED] All Write/Edit operations require MCP constraint enforcement."
 Write-Output "!!!"
 Write-Output ""
-
 exit 1
