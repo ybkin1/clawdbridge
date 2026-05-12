@@ -54,22 +54,11 @@ jobs:
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Push APK to releases branch
+      - name: Commit APK to repo
         run: |
-          mkdir -p /tmp/apk-out
-          cp mobile/android/app/build/outputs/apk/release/app-release.apk /tmp/apk-out/clawdbridge.apk
-          cd /tmp/apk-out
-          git init
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk clawdbridge.apk
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git checkout -b releases
           git add clawdbridge.apk
-          git commit -m "Build ${{ github.run_number }}"
-          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" releases:releases
-
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: clawdbridge-apk
-          path: mobile/android/app/build/outputs/apk/release/app-release.apk
-          retention-days: 30
+          git diff --cached --quiet || git commit -m "build: update APK (run ${{ github.run_number }})"
+          git push
