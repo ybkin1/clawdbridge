@@ -18,8 +18,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -56,25 +54,22 @@ jobs:
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           ./gradlew assembleRelease --no-daemon --stacktrace
 
+      - name: Push APK to releases branch
+        run: |
+          mkdir -p /tmp/apk-out
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk /tmp/apk-out/clawdbridge.apk
+          cd /tmp/apk-out
+          git init
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout -b releases
+          git add clawdbridge.apk
+          git commit -m "Build ${{ github.run_number }}"
+          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" releases:releases
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: clawdbridge-apk
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
-
-      - name: Create Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: v${{ github.run_number }}
-          name: "ClawdBridge v${{ github.run_number }}"
-          body: |
-            ## ClawdBridge Mobile APK
-            > 手机直接下载安装，无需登录
-            
-            ### 安装说明
-            1. 下载 APK → 2. 允许未知来源 → 3. 安装
-            
-            系统要求: Android 8.0+
-          artifacts: mobile/android/app/build/outputs/apk/release/app-release.apk
-          token: ${{ secrets.GITHUB_TOKEN }}
