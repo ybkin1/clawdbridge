@@ -56,43 +56,25 @@ jobs:
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Prepare APK for release
-        run: |
-          mkdir -p release
-          cp mobile/android/app/build/outputs/apk/release/app-release.apk release/clawdbridge.apk
-
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: clawdbridge-apk-v${{ github.run_number }}
-          path: release/
+          name: clawdbridge-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
 
-      - name: Delete old tag and release
-        run: |
-          git push origin :refs/tags/v0.1.0 2>/dev/null || true
-          gh release delete v0.1.0 --yes 2>/dev/null || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Create Release
+        uses: ncipollo/release-action@v1
         with:
-          tag_name: v0.1.0
-          name: "ClawdBridge v0.1.0 (Build ${{ github.run_number }})"
+          tag: v${{ github.run_number }}
+          name: "ClawdBridge v${{ github.run_number }}"
           body: |
             ## ClawdBridge Mobile APK
-            - 版本: 0.1.0
-            - 构建编号: ${{ github.run_number }}
-            - 提交: ${{ github.sha }}
+            > 手机直接下载安装，无需登录
             
-            ### 📱 手机安装说明
-            1. 下载 clawdbridge.apk
-            2. 允许"未知来源"安装
-            3. 点击安装
+            ### 安装说明
+            1. 下载 APK → 2. 允许未知来源 → 3. 安装
             
-            ### 系统要求
-            - Android 8.0 (API 26) 及以上
-          files: release/clawdbridge.apk
-          overwrite: true
-          make_latest: true
+            系统要求: Android 8.0+
+          artifacts: mobile/android/app/build/outputs/apk/release/app-release.apk
+          token: ${{ secrets.GITHUB_TOKEN }}
