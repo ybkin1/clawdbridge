@@ -16,8 +16,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
@@ -32,11 +30,16 @@ jobs:
         with:
           packages: 'platforms;android-35 build-tools;35.0.0 ndk;26.1.10909125 platform-tools cmdline-tools;latest'
 
-      - run: echo "sdk.dir=$ANDROID_SDK_ROOT" > mobile/android/local.properties
+      - name: Create local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > mobile/android/local.properties
+          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> mobile/android/local.properties
 
-      - run: cd mobile && npm install --legacy-peer-deps
+      - name: Install dependencies
+        run: cd mobile && npm install --legacy-peer-deps
 
-      - run: chmod +x mobile/android/gradlew
+      - name: Make gradlew executable
+        run: chmod +x mobile/android/gradlew
 
       - name: Build APK
         shell: bash
@@ -44,9 +47,11 @@ jobs:
           set -eo pipefail
           cd mobile/android
           export ANDROID_HOME=$ANDROID_SDK_ROOT
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          export JAVA_HOME=$JAVA_HOME_17_X64
+          ./gradlew assembleRelease --no-daemon --no-build-cache --stacktrace \
+            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError"
 
-      - name: Verify APK exists
+      - name: Verify APK
         run: ls -lh mobile/android/app/build/outputs/apk/release/
 
       - name: Upload APK Artifact
