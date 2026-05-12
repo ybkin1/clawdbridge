@@ -35,35 +35,16 @@ jobs:
           echo "sdk.dir=$ANDROID_SDK_ROOT" > mobile/android/local.properties
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> mobile/android/local.properties
 
-      - name: Tune Gradle JVM
-        run: |
-          cat >> mobile/android/gradle.properties << 'EOF'
-          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
-          kotlin.daemon.jvmargs=-Xmx2048m
-          EOF
-          echo "=== gradle.properties ==="
-          cat mobile/android/gradle.properties
-
-      - name: Verify Java
-        run: |
-          echo "JAVA_HOME=$JAVA_HOME"
-          java -version
-          echo "---"
-          $JAVA_HOME/bin/java -version
-
       - name: Install dependencies
         run: cd mobile && npm install --legacy-peer-deps
 
-      - name: Make gradlew executable
-        run: chmod +x mobile/android/gradlew
+      - run: chmod +x mobile/android/gradlew
 
       - name: Build APK
-        shell: bash
         run: |
-          set -eo pipefail
           cd mobile/android
           export ANDROID_HOME=$ANDROID_SDK_ROOT
-          ./gradlew assembleRelease --no-daemon --no-build-cache --info --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Verify APK
         run: ls -lh mobile/android/app/build/outputs/apk/release/
