@@ -216,6 +216,24 @@ Agent 在关键步骤**必须**调用 `constraint-enforcer` MCP Server 的工具
 - Agent 不得在 `check_phase_readiness` 返回 `ready: false` 时擅自推进 phase
 - Agent 不得绕过 `request_phase_transition` 直接修改 `00-task-state.yaml` 的 `phase_status`
 - PreToolUse Hook 作为**保底防线**保留；MCP 工具提供**主动修复能力**，二者互补
+- MCP 的约束规则全部来自 `.claude/config/*.yaml`（机械条件、phase 状态机、权限矩阵），不在 MCP 代码中硬编码。规范是 Single Source of Truth，配置层是规范的机器可读投影，MCP 是配置的执行引擎
+
+#### 4.6.1 MCP 响应信号
+
+MCP 工具返回中新增以下信号字段，供 Orchestrator 识别下一步动作：
+
+| 字段 | 来源工具 | 含义 |
+|------|---------|------|
+| `auditorRequired` | `check_phase_readiness`, `request_phase_transition` | `true` 表示 Auditor 裁决缺失或不通过，主线程必须触发 Auditor Agent 评审 |
+| `manualGatesPending` | `request_phase_transition` | 列出需要人工/Agent 确认的 manual gates（如 `value` gate） |
+
+**规则**：
+- Orchestrator 不得忽略 `auditorRequired=true` 的信号擅自推进
+- `auditorRequired` 由 MCP 自动推导（当 `auditor_verdict` 缺失或不为 `audited` 时），无需 Orchestrator 自行判断
+
+#### 4.6.2 配置热重载
+
+`.claude/config/*.yaml` 修改后，MCP server 在**下一次工具调用时自动检测文件 mtime 变化并重新加载**，无需重启进程或修改 MCP 代码。这保证了规范维护者更新配置后，约束规则立即生效。
 
 ## 5. 评审循环流程
 

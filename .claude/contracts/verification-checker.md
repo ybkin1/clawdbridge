@@ -306,7 +306,45 @@ gap_count: 0
 
 Agent 的**最佳实践**：先调用 MCP 工具修复 gap，再执行敏感操作，避免触发 hook 阻断。
 
-## 13. 非目标
+## 13. 配置层与 MCP 的接口规范
+
+### 13.1 设计原则
+
+MCP 约束执行器（`constraint-enforcer`）不内置任何规范规则。所有规则从 `.claude/config/*.yaml` 读取：
+
+| 配置文件 | 来源契约 | MCP 消费方 |
+|---------|---------|-----------|
+| `mechanical-conditions.yaml` | `task-tracking-workflow-spec.md` §4.2.1 | `check_phase_readiness`, `request_phase_transition` |
+| `phase-state-machine.yaml` | `task-tracking-workflow-spec.md` §4.1, §4.3 | `request_phase_transition` |
+| `write-permissions.yaml` | `task-tracking-workflow-spec.md` §6 | `validate_write_permission`, PreToolUse Hook |
+| `mcp-capabilities.yaml` | 本契约 §13 | `request_phase_transition`（manual gate 处理） |
+| `registry.yaml` | 全部 active contracts | `get_active_contract_set`, `get_checker_catalog`, `run_mandatory_checkers` |
+
+**核心原则**：规范是 Single Source of Truth；配置层是规范的机器可读投影；MCP 只读取配置，绝不内置规则。
+
+### 13.2 配置变更生效机制
+
+- MCP 在启动时加载配置到内存缓存
+- 配置变更后，`loadConfig()` 自动检测文件 mtime 变化并重新加载，无需重启 MCP server 或修改 MCP 代码
+- 手动调用 `invalidateConfigCache()` 可强制清空缓存
+
+### 13.3 Registry 感知协议
+
+`run_mandatory_checkers` 采用双源读取策略：
+1. **优先**：任务级 `route-projection.yaml` 的 `mandatory_checkers`
+2. **回退**：从 `registry.yaml` 聚合所有 active contract 的 `checker_refs`
+
+这样即使任务创建时未写 `route-projection.yaml`，MCP 也能推导出应运行的 checkers。
+
+### 13.4 Manual Gate 处理
+
+对于无法机械自动化的 gate（如 `value` gate）：
+- MCP 不阻断 phase transition
+- 在 `evidence_lock` 中记录 `manual_gates_pending`
+- 在 transition result 中附带 `manual_verification_required`
+- 由 Agent/人类确认后，填写 `manual_gates_acknowledged` 再推进
+
+## 14. 非目标
 
 本契约不追求：
 - 100% 自动化验证 — 部分检查面（如架构拆解完整性）天然需要人工判断
