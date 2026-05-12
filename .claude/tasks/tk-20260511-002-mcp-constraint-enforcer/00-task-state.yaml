@@ -1,0 +1,44 @@
+# 00-task-state.yaml — tk-20260511-002-mcp-constraint-enforcer
+
+task_id: tk-20260511-002
+title: "MCP 约束执行器：6 工具强制规范合规"
+delivery_mode: full
+phase: release-ready
+subphase: authoring
+phase_status: passed
+
+current_primary_artifact: ".claude/mcp-servers/constraint-enforcer/enforcer.js"
+
+current_gate_bundle: ""
+
+gate_results:
+  round1: passed
+  round2: passed
+  round3: passed
+
+closeout_allowed: true
+
+last_review_report: ".claude/tasks/tk-20260511-002-mcp-constraint-enforcer/reviews/review-r3-constraint-enforcer.md"
+
+last_blocker_report: ""
+
+route_projection_ref: ""
+
+architecture_blueprint_ref: ""
+architecture_blueprint_status: not_required
+
+context_budget_percent_estimate: 85
+
+readme_requirement:
+  status: required
+  reason: "Standard complexity task requiring documented closeout"
+  recorded_at: "2026-05-12T11:50:00+08:00"
+  decided_by: "agent"
+
+audit_fixes_applied:
+  - "Hook fail-open → fail-closed (3 files)"
+  - "Remove auto-dispatch suggestions from Hook output"
+  - "Eliminate fallback, block all Write/Edit when MCP unavailable"
+  - "Implement config-sync-check (discovered registry drift and fixed)"
+  - "Confirm no PostToolUse references in spec architecture"
+updated_at: "2026-05-12T16:55:00+08:00"

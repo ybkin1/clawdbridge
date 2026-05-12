@@ -1,0 +1,30 @@
+review_rubric:
+  dimensions:
+    - id: security_design
+      name: "Security Design Correctness"
+      weight: 0.40
+      criteria:
+        - "Fail-closed behavior on all error paths"
+        - "No path traversal or command injection residual risk"
+        - "Fallback does not create a smaller protection surface"
+
+    - id: contract_compliance
+      name: "Spec Architecture Compliance"
+      weight: 0.35
+      criteria:
+        - "No PostToolUse assumptions in current codebase"
+        - "Hook output does not violate action-governance"
+        - "config-sync-check correctly validates cross-config consistency"
+
+    - id: mechanical_integrity
+      name: "Mechanical Integrity"
+      weight: 0.25
+      criteria:
+        - "All tests pass"
+        - "No regressions in existing checker behavior"
+        - "New checker is registered and discoverable"
+
+  verdict_levels:
+    - pass: "All dimensions satisfied, no material findings"
+    - conditional_pass: "Minor findings that can be fixed without re-audit"
+    - fail: "Any P0 defect not fully remediated, or new P0 introduced"

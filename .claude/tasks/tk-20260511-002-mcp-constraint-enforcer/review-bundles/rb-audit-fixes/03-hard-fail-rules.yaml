@@ -1,0 +1,25 @@
+hard_fail_rules:
+  - id: hf-1
+    description: "Any Write/Edit operation can bypass the Hook due to fail-open error handling"
+    severity: critical
+    check: "Verify all catch/exception paths in helper and hooks exit with code 1 and block"
+
+  - id: hf-2
+    description: "Fallback protection surface is smaller than MCP-driven protection"
+    severity: critical
+    check: "Verify fallback blocks ALL Write/Edit or does not exist"
+
+  - id: hf-3
+    description: "Hook output suggests specific MCP tool calls to the Agent"
+    severity: high
+    check: "Verify no numbered fix-suggestion lists in .ps1 or .sh"
+
+  - id: hf-4
+    description: "PostToolUse Hook is referenced in spec architecture code or docs"
+    severity: high
+    check: "Search .claude/contracts and .claude/config for PostToolUse references"
+
+  - id: hf-5
+    description: "config-sync-check does not detect actual config drift"
+    severity: high
+    check: "Introduce a deliberate mismatch and verify checker catches it"
