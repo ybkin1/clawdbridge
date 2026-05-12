@@ -257,6 +257,20 @@ checkers:
       evidence_format: "类型检查报告 + 关键函数签名比对表"
       minimum_requirement: "类型检查零错误，函数签名与 §14 伪代码一致"
 
+  # === 原子性拆包 Checker (1个) ===
+  atomicity-check:
+    script: atomicity-check.js
+    mode: automated
+    scope: task work packets, board.yaml, work-packets.yaml
+    gate_binding: professional
+    contracts: [work-packet-governance, execution-traceability]
+    stage: [stage6]
+    description: "Work packet 原子性验证（描述≤15词、参数≤5、代码≤50行、单文件、设计引用、验收标准）"
+    output_schema: "checker-result-v1"
+    structured_output_required: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
+
   # === 配置一致性 Checker (1个) ===
   config-sync-check:
     script: config-sync-check.sh

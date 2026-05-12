@@ -1,0 +1,69 @@
+rubric:
+  - dimension: security
+    weight: critical
+    criteria:
+      - id: S1
+        text: "No Hook bypass paths exist"
+        scoring: pass_fail
+      - id: S2
+        text: "MCP tool abuse vectors are mitigated"
+        scoring: pass_fail
+      - id: S3
+        text: "Privilege escalation between agent tiers is blocked"
+        scoring: pass_fail
+
+  - dimension: feasibility
+    weight: high
+    criteria:
+      - id: F1
+        text: "Token estimation strategy works without tokenizer API"
+        scoring: pass_fail
+      - id: F2
+        text: "Config drift detection is operational"
+        scoring: pass_fail
+      - id: F3
+        text: "Operational burden is acceptable for a single developer"
+        scoring: scale_1_5
+
+  - dimension: performance
+    weight: medium
+    criteria:
+      - id: P1
+        text: "Config cache hot-reload overhead is <50ms"
+        scoring: pass_fail
+      - id: P2
+        text: "28-packet scenario latency is tolerable"
+        scoring: scale_1_5
+
+  - dimension: maintainability
+    weight: high
+    criteria:
+      - id: M1
+        text: "Config-sync-check catches real drift (proven)"
+        scoring: pass_fail
+      - id: M2
+        text: "Schema evolution path is documented"
+        scoring: pass_fail
+
+  - dimension: platform_binding
+    weight: medium
+    criteria:
+      - id: PB1
+        text: "Hook works on Windows (PowerShell) and Linux (Bash)"
+        scoring: pass_fail
+      - id: PB2
+        text: "Node.js dependency has fallback"
+        scoring: pass_fail
+
+  - dimension: exception_recovery
+    weight: high
+    criteria:
+      - id: ER1
+        text: "Sub-Orchestrator crash is detectable"
+        scoring: pass_fail
+      - id: ER2
+        text: "Dead agent timeout mechanism exists"
+        scoring: pass_fail
+      - id: ER3
+        text: "Fan-in can proceed with partial results"
+        scoring: pass_fail

@@ -60,10 +60,137 @@ function loadConfig(configName) {
   return config;
 }
 
+// Directory-level batch loading: 1 readdir + N stats instead of N separate calls (P-001 fix)
+let allConfigsCacheTime = 0;
+const ALL_CONFIG_NAMES = ["mechanical-conditions", "phase-state-machine", "write-permissions", "mcp-capabilities", "atomicity-rules"];
+
+function loadAllConfigs() {
+  try {
+    const dirStat = fs.statSync(CONFIG_DIR);
+    const dirMtime = dirStat.mtimeMs;
+    if (allConfigsCacheTime === dirMtime) {
+      // Directory unchanged; all individual file caches are still valid
+      return;
+    }
+    // Load all config files in one batch
+    for (const name of ALL_CONFIG_NAMES) {
+      loadConfig(name); // individual mtime cache still applies inside
+    }
+    allConfigsCacheTime = dirMtime;
+  } catch (err) {
+    // CONFIG_DIR may not exist; fall back to individual loads
+  }
+}
+
 export function invalidateConfigCache() {
   configCache = {};
   configMtimes = {};
+  allConfigsCacheTime = 0;
 }
+
+// ---------------------------------------------------------------------------
+// Token estimation utility (F-004 fix)
+// Approximation: EN words / 0.75 + CJK chars ≈ tokens
+// Accuracy: ±30%; intended for budget threshold checks, not billing
+// ---------------------------------------------------------------------------
+
+export function estimateTokens(text) {
+  if (!text) return 0;
+  const str = String(text);
+  const enWords = str.split(/\s+/).filter((w) => w.length > 0 && !/[\u4e00-\u9fff]/.test(w)).length;
+  const cnChars = (str.match(/[\u4e00-\u9fff]/g) || []).length;
+  return Math.ceil(enWords / 0.75 + cnChars);
+}
+
+// ---------------------------------------------------------------------------
+// Startup config validation — fail loud on unknown check_type or version mismatch
+// ---------------------------------------------------------------------------
+
+const SUPPORTED_CONFIG_VERSION_MIN = 1;
+const SUPPORTED_CONFIG_VERSION_MAX = 1;
+
+const KNOWN_CHECK_TYPES = new Set([
+  "field_equals",
+  "field_not_equals",
+  "field_empty_or_null",
+  "gate_results_all_passed",
+  "file_exists_and_size_gt_0",
+  "timestamp_freshness",
+  "checker_result_status",
+  "mandatory_checkers_all_passed_or_excepted",
+  "evidence_lock_exists",
+]);
+
+function validateSchemaFields(name, cfg, schema) {
+  const errors = [];
+  if (!schema || !schema.required || !Array.isArray(schema.required)) return errors;
+  for (const field of schema.required) {
+    if (cfg[field] === undefined) {
+      errors.push(`Config '${name}.yaml' missing required field: ${field}`);
+    }
+  }
+  return errors;
+}
+
+function validateConfigs() {
+  const errors = [];
+  const configsToValidate = [
+    { name: "mechanical-conditions", required: true },
+    { name: "phase-state-machine", required: true },
+    { name: "write-permissions", required: true },
+    { name: "mcp-capabilities", required: true },
+  ];
+
+  for (const { name, required } of configsToValidate) {
+    const cfg = loadConfig(name);
+    if (!cfg) {
+      if (required) errors.push(`Required config '${name}.yaml' is missing or unreadable.`);
+      continue;
+    }
+    if (cfg.version !== undefined) {
+      const v = Number(cfg.version);
+      if (Number.isNaN(v) || v < SUPPORTED_CONFIG_VERSION_MIN || v > SUPPORTED_CONFIG_VERSION_MAX) {
+        errors.push(
+          `Config '${name}.yaml' version ${cfg.version} is not supported (supported: ${SUPPORTED_CONFIG_VERSION_MIN}-${SUPPORTED_CONFIG_VERSION_MAX}).`
+        );
+      }
+    }
+    // Light-weight schema validation: check required fields from JSON Schema
+    const schemaPath = path.join(CONFIG_DIR, "schemas", `${name}.schema.json`);
+    if (fs.existsSync(schemaPath)) {
+      try {
+        const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
+        errors.push(...validateSchemaFields(name, cfg, schema));
+      } catch (e) {
+        errors.push(`Failed to parse schema '${name}.schema.json': ${e.message}`);
+      }
+    }
+  }
+
+  const mc = loadConfig("mechanical-conditions");
+  if (mc?.conditions) {
+    for (const cond of mc.conditions) {
+      if (cond.check_type && !KNOWN_CHECK_TYPES.has(cond.check_type)) {
+        errors.push(
+          `mechanical-conditions.yaml contains unknown check_type '${cond.check_type}' in condition '${cond.id}'. ` +
+            `Known types: ${Array.from(KNOWN_CHECK_TYPES).join(", ")}. `
+        );
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error("[constraint-enforcer] CONFIG VALIDATION FAILED:");
+    for (const e of errors) {
+      console.error(`  - ${e}`);
+    }
+    console.error("[constraint-enforcer] MCP tools may return errors until configs are fixed.");
+  }
+  return errors;
+}
+
+// Run once at module load
+const startupValidationErrors = validateConfigs();
 
 // ---------------------------------------------------------------------------
 // Task resolution helpers
@@ -112,7 +239,7 @@ function hashDir(dirPath) {
 // evaluateCondition — 配置驱动的机械条件评估引擎
 // ---------------------------------------------------------------------------
 
-async function evaluateCondition(cond, state, taskDir) {
+async function evaluateCondition(cond, state, taskDir, checkerIndex = null) {
   const checkType = cond.check_type;
 
   switch (checkType) {
@@ -185,17 +312,22 @@ async function evaluateCondition(cond, state, taskDir) {
     }
 
     case "checker_result_status": {
-      const checkerDir = path.join(taskDir, "checkers");
-      const file =
-        fs.existsSync(checkerDir) &&
-        fs.readdirSync(checkerDir).find(
-          (f) =>
-            f.includes(cond.checker_id) && f.endsWith(".yaml") && !f.startsWith("evidence-lock")
-        );
+      let file = null;
+      if (checkerIndex && checkerIndex.has(cond.checker_id)) {
+        file = checkerIndex.get(cond.checker_id);
+      } else {
+        const checkerDir = path.join(taskDir, "checkers");
+        file =
+          fs.existsSync(checkerDir) &&
+          fs.readdirSync(checkerDir).find(
+            (f) =>
+              f.includes(cond.checker_id) && f.endsWith(".yaml") && !f.startsWith("evidence-lock")
+          );
+      }
       if (!file) {
         return { passed: false, gap: `Condition '${cond.id}': Checker result not found for ${cond.checker_id}` };
       }
-      const doc = loadYaml(path.join(checkerDir, file));
+      const doc = loadYaml(path.join(taskDir, "checkers", file));
       const status = doc?.status || "";
       const passed = status === cond.expected;
       return {
@@ -213,11 +345,14 @@ async function evaluateCondition(cond, state, taskDir) {
       for (const c of mandatory) {
         const cid = String(c).trim();
         if (!cid) continue;
-        const resultFile =
-          fs.existsSync(checkerDir) &&
-          fs.readdirSync(checkerDir).find(
+        let resultFile = null;
+        if (checkerIndex && checkerIndex.has(cid)) {
+          resultFile = checkerIndex.get(cid);
+        } else if (fs.existsSync(checkerDir)) {
+          resultFile = fs.readdirSync(checkerDir).find(
             (f) => f.includes(cid) && f.endsWith(".yaml") && !f.startsWith("evidence-lock")
           );
+        }
         if (!resultFile) {
           mgaps.push(`Mandatory checker not run: ${cid}`);
           continue;
@@ -250,8 +385,8 @@ async function evaluateCondition(cond, state, taskDir) {
 
     default:
       return {
-        passed: true,
-        gap: null,
+        passed: false,
+        gap: `Condition '${cond.id}': Unknown check_type '${checkType}' — no handler implemented. This is a configuration error.`,
       };
   }
 }
@@ -261,6 +396,7 @@ async function evaluateCondition(cond, state, taskDir) {
 // ---------------------------------------------------------------------------
 
 export async function checkPhaseReadiness(args = {}) {
+  loadAllConfigs(); // Batch preload to reduce per-file stat overhead (P-001 fix)
   const taskDir = resolveTaskDir(args.taskDir);
   if (!taskDir) {
     return { ready: false, gaps: ["No active task found."] };
@@ -288,13 +424,26 @@ export async function checkPhaseReadiness(args = {}) {
     };
   }
 
+  // Pre-index checker results to eliminate repeated readdirSync (P-002 fix)
+  const checkerDir = path.join(taskDir, "checkers");
+  const checkerIndex = new Map();
+  if (fs.existsSync(checkerDir)) {
+    for (const f of fs.readdirSync(checkerDir)) {
+      if (!f.endsWith(".yaml") || f.startsWith("evidence-lock")) continue;
+      const base = f.replace(/\.yaml$/, "");
+      const dashIdx = base.lastIndexOf("-");
+      const cid = dashIdx > 0 ? base.slice(0, dashIdx) : base;
+      if (!checkerIndex.has(cid)) checkerIndex.set(cid, f);
+    }
+  }
+
   // Load config-driven conditions
   const config = loadConfig("mechanical-conditions");
   const conditions = config?.conditions || [];
 
   if (conditions.length > 0) {
     for (const cond of conditions) {
-      const result = await evaluateCondition(cond, state, taskDir);
+      const result = await evaluateCondition(cond, state, taskDir, checkerIndex);
       if (!result.passed && cond.blocker_level === "hard") {
         gaps.push(result.gap);
       }
@@ -421,19 +570,30 @@ export async function runMandatoryCheckers(args = {}) {
     : null;
 
   const runTimestamp = new Date().toISOString().replace(/[:.]/g, "").slice(0, 15);
-  const results = [];
 
+  // Pre-index existing checker results to eliminate repeated readdirSync (P-002 fix)
+  const existingCheckerFiles = fs.existsSync(taskCheckerDir)
+    ? fs.readdirSync(taskCheckerDir).filter((f) => f.endsWith(".yaml") && !f.startsWith("evidence-lock"))
+    : [];
+  const existingByChecker = new Map();
+  for (const f of existingCheckerFiles) {
+    // Extract checker_id from filename (format: <checker_id>-<timestamp>.yaml)
+    const base = f.replace(/\.yaml$/, "");
+    const dashIdx = base.lastIndexOf("-");
+    const cid = dashIdx > 0 ? base.slice(0, dashIdx) : base;
+    if (!existingByChecker.has(cid)) existingByChecker.set(cid, f);
+  }
+
+  const tasks = [];
   for (const c of mandatory) {
     const checkerId = String(c).trim();
     if (!checkerId) continue;
     if (filter && !filter.includes(checkerId)) continue;
 
     // Skip if already has a result
-    const existing =
-      fs.existsSync(taskCheckerDir) &&
-      fs.readdirSync(taskCheckerDir).find((f) => f.includes(checkerId));
+    const existing = existingByChecker.get(checkerId);
     if (existing) {
-      results.push({ checkerId, action: "SKIP", file: existing });
+      tasks.push(() => Promise.resolve({ checkerId, action: "SKIP", file: existing }));
       continue;
     }
 
@@ -473,47 +633,70 @@ export async function runMandatoryCheckers(args = {}) {
         legacy_text_output: "",
       };
       fs.writeFileSync(resultFile, yaml.dump(doc));
-      results.push({ checkerId, action: "PENDING", file: `${runId}.yaml` });
+      tasks.push(() => Promise.resolve({ checkerId, action: "PENDING", file: `${runId}.yaml` }));
       continue;
     }
 
-    // Run checker
-    const { output, status } = await runBashChecker(scriptPath, PROJECT_ROOT, checkerRoot);
-
-    const doc = {
-      checker_run_id: runId,
-      checker_id: checkerId,
-      task_id: taskId,
-      run_at: new Date().toISOString(),
-      mode: "automated",
-      status,
-      target_ref: taskDir,
-      summary: "Auto-run by constraint-enforcer MCP Server",
-      evidence_ref: `checkers/${runId}.yaml`,
-      gate_binding: "",
-      failure_detail: {
-        affected_gate: "",
-        severity: "",
-        description: "",
-        remediation_hint: "",
-      },
-      manual_evidence: {
-        method: "",
-        result: "",
-        evidence_path: "",
-        reviewed_by: "",
-      },
-      legacy_text_output: output,
-    };
-    fs.writeFileSync(resultFile, yaml.dump(doc));
-    results.push({ checkerId, action: status.toUpperCase(), file: `${runId}.yaml` });
+    // Async checker execution task
+    tasks.push(async () => {
+      const { output, status } = await runBashChecker(scriptPath, PROJECT_ROOT, checkerRoot);
+      const doc = {
+        checker_run_id: runId,
+        checker_id: checkerId,
+        task_id: taskId,
+        run_at: new Date().toISOString(),
+        mode: "automated",
+        status,
+        target_ref: taskDir,
+        summary: "Auto-run by constraint-enforcer MCP Server",
+        evidence_ref: `checkers/${runId}.yaml`,
+        gate_binding: "",
+        failure_detail: {
+          affected_gate: "",
+          severity: "",
+          description: "",
+          remediation_hint: "",
+        },
+        manual_evidence: {
+          method: "",
+          result: "",
+          evidence_path: "",
+          reviewed_by: "",
+        },
+        legacy_text_output: output,
+      };
+      fs.writeFileSync(resultFile, yaml.dump(doc));
+      return { checkerId, action: status.toUpperCase(), file: `${runId}.yaml` };
+    });
   }
+
+  // Bounded concurrency: max 3 parallel checkers (P-003 fix)
+  const MAX_CONCURRENCY = 3;
+  const results = new Array(tasks.length);
+  let index = 0;
+
+  async function worker() {
+    while (index < tasks.length) {
+      const i = index++;
+      try {
+        results[i] = await tasks[i]();
+      } catch (err) {
+        results[i] = { checkerId: "unknown", action: "ERROR", error: err.message };
+      }
+    }
+  }
+
+  const workers = [];
+  for (let i = 0; i < Math.min(MAX_CONCURRENCY, tasks.length); i++) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
 
   return {
     success: true,
     taskId,
     results,
-    summary: `Processed ${results.length} checker(s).`,
+    summary: `Processed ${results.length} checker(s) with max ${MAX_CONCURRENCY} concurrency.`,
     timestamp: new Date().toISOString(),
   };
 }
@@ -575,6 +758,7 @@ function checkProtectedTransitions(newContent, state, readiness) {
 }
 
 export async function validateWritePermission(args = {}) {
+  loadAllConfigs(); // Batch preload (P-001 fix)
   const taskDir = resolveTaskDir(args.taskDir);
   const filePath = args.filePath || "";
 
@@ -584,22 +768,31 @@ export async function validateWritePermission(args = {}) {
 
   const normPath = filePath.replace(/\\/g, "/");
 
-  // If no active task, allow non-sensitive operations
+  // If no active task, block sensitive operations (fail-closed)
   if (!taskDir) {
-    return { allowed: true, reason: "No active task; operation allowed." };
+    return { allowed: false, reason: "BLOCKED: No active task found; cannot validate permission." };
   }
 
-  // Security: path traversal guard
-  const resolvedFile = path.resolve(filePath);
-  const relativeToTask = path.relative(taskDir, resolvedFile);
-  if (relativeToTask.startsWith("..") || path.isAbsolute(relativeToTask)) {
+  // Security: path traversal guard with symlink resolution
+  let resolvedFile, resolvedTaskDir;
+  try {
+    resolvedTaskDir = fs.realpathSync(taskDir);
+    // For the target file, use realpathSync only if it exists; otherwise fall back to path.resolve
+    const rawResolved = path.resolve(filePath);
+    resolvedFile = fs.existsSync(rawResolved) ? fs.realpathSync(rawResolved) : rawResolved;
+  } catch (err) {
+    return { allowed: false, reason: "BLOCKED: Cannot resolve file path for security check." };
+  }
+  const relativeToTask = path.relative(resolvedTaskDir, resolvedFile);
+  const isOutsideTask = relativeToTask.startsWith("..") || path.isAbsolute(relativeToTask) || relativeToTask === "";
+  if (isOutsideTask) {
     return { allowed: false, reason: "BLOCKED: filePath escapes task directory." };
   }
 
   const stateFile = path.join(taskDir, "00-task-state.yaml");
   const state = loadYaml(stateFile);
   if (!state) {
-    return { allowed: true, reason: "Task state unreadable; allowing operation." };
+    return { allowed: false, reason: "BLOCKED: Task state unreadable; cannot validate permission." };
   }
 
   const phaseStatus = state.phase_status || "unknown";
@@ -785,6 +978,7 @@ export async function generateEvidenceLock(args = {}) {
 // ---------------------------------------------------------------------------
 
 export async function requestPhaseTransition(args = {}) {
+  loadAllConfigs(); // Batch preload (P-001 fix)
   const taskDir = resolveTaskDir(args.taskDir);
   if (!taskDir) {
     return { success: false, reason: "No active task found." };
@@ -879,9 +1073,29 @@ export async function requestPhaseTransition(args = {}) {
     state.manual_gates_pending = manualGatesPending;
   }
 
+  // Step 6: Atomic state write with rollback on failure (R-006 fix)
   const tempFile = `${stateFile}.tmp`;
-  fs.writeFileSync(tempFile, yaml.dump(state));
-  fs.renameSync(tempFile, stateFile);
+  let writeError = null;
+  try {
+    fs.writeFileSync(tempFile, yaml.dump(state));
+    fs.renameSync(tempFile, stateFile);
+  } catch (err) {
+    writeError = err;
+    // Rollback: delete temp file if it exists
+    try {
+      if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+    } catch {
+      // ignore cleanup errors
+    }
+  }
+
+  if (writeError) {
+    return {
+      success: false,
+      reason: `State file atomic write failed: ${writeError.message}. Task state was NOT modified.`,
+      recommendation: "Check disk space and file permissions, then retry.",
+    };
+  }
 
   return {
     success: true,

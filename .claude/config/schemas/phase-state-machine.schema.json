@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "phase-state-machine",
+  "description": "Phase 状态机与 Gate 映射",
+  "type": "object",
+  "required": ["version", "phases"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "next", "gates", "evidence_lock_required"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z-]+$" },
+          "next": { "type": ["string", "null"] },
+          "gates": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["value", "professional", "contract"] }
+          },
+          "evidence_lock_required": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

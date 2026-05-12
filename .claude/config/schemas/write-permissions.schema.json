@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "write-permissions",
+  "description": "角色-文件权限矩阵与敏感模式",
+  "type": "object",
+  "required": ["version", "roles", "sensitive_patterns"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "allows", "blocks"],
+        "properties": {
+          "id": { "type": "string" },
+          "description": { "type": "string" },
+          "allows": {
+            "type": "array",
+            "items": { "type": "object", "properties": { "pattern": { "type": "string" } } }
+          },
+          "blocks": {
+            "type": "array",
+            "items": { "type": "object", "properties": { "pattern": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "sensitive_patterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "regex"],
+        "properties": {
+          "name": { "type": "string" },
+          "regex": { "type": "string" },
+          "description": { "type": "string" },
+          "exclude": { "type": "string" }
+        }
+      }
+    },
+    "protected_transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["target_field", "forbidden_values", "requires_readiness", "reason"],
+        "properties": {
+          "target_field": { "type": "string" },
+          "forbidden_values": { "type": "array" },
+          "requires_readiness": { "type": "boolean" },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

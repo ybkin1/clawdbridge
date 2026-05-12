@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "mechanical-conditions",
+  "description": "机械条件的机器可读配置",
+  "type": "object",
+  "required": ["version", "conditions"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "conditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "check_type", "target_field", "blocker_level"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9_-]+$" },
+          "name": { "type": "string" },
+          "check_type": {
+            "type": "string",
+            "enum": [
+              "field_equals",
+              "field_not_equals",
+              "field_empty_or_null",
+              "gate_results_all_passed",
+              "file_exists_and_size_gt_0",
+              "timestamp_freshness",
+              "checker_result_status",
+              "mandatory_checkers_all_passed_or_excepted",
+              "evidence_lock_exists"
+            ]
+          },
+          "target": { "type": "string" },
+          "target_field": { "type": "string" },
+          "field": { "type": "string" },
+          "expected": {},
+          "blocker_level": { "type": "string", "enum": ["hard", "soft"] },
+          "rationale": { "type": "string" }
+        }
+      }
+    }
+  }
+}

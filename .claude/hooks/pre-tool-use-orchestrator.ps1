@@ -60,16 +60,21 @@ $helperPath = Join-Path $PSScriptRoot "hook-enforcer-helper.js"
 $mcpResult = $null
 
 if (Test-Path $helperPath) {
-    try {
-        $helperInput = @{
-            filePath   = $targetPath
-            operation  = $toolName
-            newContent = $newContent
-        } | ConvertTo-Json -Compress
+    $nodePath = Get-Command node -ErrorAction SilentlyContinue
+    if ($nodePath) {
+        try {
+            $helperInput = @{
+                filePath   = $targetPath
+                operation  = $toolName
+                newContent = $newContent
+            } | ConvertTo-Json -Compress
 
-        $helperOutput = $helperInput | & node $helperPath 2>$null | Out-String
-        $mcpResult = $helperOutput | ConvertFrom-Json
-    } catch {
+            $helperOutput = $helperInput | & $nodePath.Source $helperPath 2>$null | Out-String
+            $mcpResult = $helperOutput | ConvertFrom-Json
+        } catch {
+            $mcpResult = $null
+        }
+    } else {
         $mcpResult = $null
     }
 }

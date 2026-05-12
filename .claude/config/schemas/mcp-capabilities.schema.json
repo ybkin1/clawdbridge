@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "mcp-capabilities",
+  "description": "MCP 能力边界声明",
+  "type": "object",
+  "required": ["version", "automatable", "manual_only", "hybrid"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "automatable": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["check_type"],
+            "properties": {
+              "check_type": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        ]
+      }
+    },
+    "manual_only": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["gate"],
+            "properties": {
+              "gate": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        ]
+      }
+    },
+    "hybrid": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["check_type"],
+        "properties": {
+          "check_type": { "type": "string" },
+          "automated": { "type": "string" },
+          "manual": { "type": "string" }
+        }
+      }
+    },
+    "behavior": {
+      "type": "object",
+      "properties": {
+        "manual_gate_pending_policy": {
+          "type": "object",
+          "properties": {
+            "block_transition": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

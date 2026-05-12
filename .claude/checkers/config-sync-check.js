@@ -166,6 +166,106 @@ if (!caps) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Check 6: mcp-capabilities.automatable check_types must be known
+// ---------------------------------------------------------------------------
+const KNOWN_CHECK_TYPES = new Set([
+  "field_equals",
+  "field_not_equals",
+  "field_empty_or_null",
+  "gate_results_all_passed",
+  "file_exists_and_size_gt_0",
+  "timestamp_freshness",
+  "checker_result_status",
+  "mandatory_checkers_all_passed_or_excepted",
+  "evidence_lock_exists",
+]);
+
+if (caps) {
+  const automatable = caps.automatable || [];
+  for (const item of automatable) {
+    if (typeof item === "string" && !KNOWN_CHECK_TYPES.has(item)) {
+      errors.push(`mcp-capabilities.automatable contains unknown check_type: ${item}`);
+    } else if (typeof item === "object" && item.check_type && !KNOWN_CHECK_TYPES.has(item.check_type)) {
+      errors.push(`mcp-capabilities.automatable contains unknown check_type: ${item.check_type}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 7: phase-state-machine next-linkage consistency (no dangling, no cycles)
+// ---------------------------------------------------------------------------
+if (psm) {
+  const phaseIds = new Set((psm.phases || []).map((p) => p.id));
+  const adj = new Map();
+  for (const p of psm.phases || []) {
+    if (p.next && !phaseIds.has(p.next)) {
+      errors.push(`phase-state-machine: phase '${p.id}' has dangling next='${p.next}'`);
+    }
+    if (p.next) {
+      adj.set(p.id, p.next);
+    }
+  }
+  // Cycle detection (Floyd or DFS)
+  for (const start of phaseIds) {
+    const visited = new Set();
+    let cur = start;
+    while (cur && adj.has(cur)) {
+      if (visited.has(cur)) {
+        errors.push(`phase-state-machine: cycle detected involving phase '${cur}'`);
+        break;
+      }
+      visited.add(cur);
+      cur = adj.get(cur);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 8: registry.yaml active contracts must have version field
+// ---------------------------------------------------------------------------
+if (registry) {
+  for (const [cid, contract] of Object.entries(registry.contracts || {})) {
+    if (contract.status === "active" && contract.version === undefined) {
+      errors.push(`registry contract '${cid}' is active but missing 'version' field`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 9: all config files must have version field
+// ---------------------------------------------------------------------------
+const allConfigs = [
+  { name: "mechanical-conditions", doc: mc },
+  { name: "phase-state-machine", doc: psm },
+  { name: "write-permissions", doc: wp },
+  { name: "mcp-capabilities", doc: caps },
+];
+for (const { name, doc } of allConfigs) {
+  if (doc && doc.version === undefined) {
+    errors.push(`config '${name}.yaml' missing 'version' field`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 10: write-permissions.roles structure integrity
+// ---------------------------------------------------------------------------
+if (wp) {
+  const roles = wp.roles || [];
+  for (let i = 0; i < roles.length; i++) {
+    const role = roles[i];
+    if (!role.id) {
+      errors.push(`write-permissions.yaml roles[${i}] missing 'id'`);
+    }
+    if (!Array.isArray(role.allows)) {
+      errors.push(`write-permissions.yaml role '${role.id || i}' missing or invalid 'allows'`);
+    }
+    if (!Array.isArray(role.blocks)) {
+      errors.push(`write-permissions.yaml role '${role.id || i}' missing or invalid 'blocks'`);
+    }
+  }
+}
+
 // Output
 if (errors.length > 0) {
   console.log("FAILED: config-sync-check");

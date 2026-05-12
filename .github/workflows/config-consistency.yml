@@ -1,0 +1,48 @@
+name: Config Consistency Check
+
+on:
+  pull_request:
+    paths:
+      - '.claude/config/**'
+      - '.claude/contracts/registry.yaml'
+      - '.claude/checkers/index.yaml'
+      - '.claude/mcp-servers/constraint-enforcer/enforcer.js'
+  push:
+    branches: [master, main]
+    paths:
+      - '.claude/config/**'
+      - '.claude/contracts/registry.yaml'
+      - '.claude/checkers/index.yaml'
+      - '.claude/mcp-servers/constraint-enforcer/enforcer.js'
+  workflow_dispatch:
+
+jobs:
+  config-sync:
+    name: Run config-sync-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install MCP server dependencies
+        run: |
+          cd .claude/mcp-servers/constraint-enforcer
+          npm ci || npm install
+
+      - name: Run config-sync-check
+        run: |
+          bash .claude/checkers/config-sync-check.sh .
+
+      - name: Run atomicity-check (schema validation)
+        run: |
+          node .claude/checkers/atomicity-check.js .
+
+      - name: Run enforcer unit tests
+        run: |
+          cd .claude/mcp-servers/constraint-enforcer
+          node test.js

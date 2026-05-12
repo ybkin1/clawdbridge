@@ -45,20 +45,20 @@ roles:
 # 敏感文件模式（用于 validate_write_permission 的 sensitivity 判定）
 sensitive_patterns:
   - name: state_file
-    regex: "00-task-state\\.yaml$"
+    regex: "^.*00-task-state\\.yaml$"
     description: "任务状态真相源"
 
   - name: evidence_lock
-    regex: "evidence-lock-.*\\.yaml$"
+    regex: "^.*evidence-lock-.*\\.yaml$"
     description: "证据锁文件"
 
   - name: checker_result
-    regex: "checkers/[^/]+\\.yaml$"
+    regex: "^.*checkers/[^/]+\\.yaml$"
     exclude: "evidence-lock"
     description: "Checker 结果文件"
 
   - name: receipt
-    regex: "reviews/receipt-.*\\.yaml$"
+    regex: "^.*reviews/receipt-.*\\.yaml$"
     description: "评审收据"
 
 # 受保护的状态转换（写入这些字段需要 readiness 满足）

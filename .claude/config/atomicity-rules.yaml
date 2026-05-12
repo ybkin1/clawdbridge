@@ -1,0 +1,90 @@
+# Atomicity Rules — Work Packet Decomposition Validator
+# Source: work-packet-governance.md §4.1 + architecture optimization plan v3.0
+# Purpose: Auto-validate that work packets are decomposed to atomic units
+
+version: 1
+updated_at: "2026-05-12"
+
+rules:
+  - id: description_brevity
+    name: "Description ≤15 words"
+    check_type: "word_count"
+    target_field: "description"
+    max: 15
+    blocker_level: hard
+    rationale: "If you can't describe it in 15 words, it's not atomic"
+
+  - id: input_param_limit
+    name: "Input params ≤5"
+    check_type: "array_length"
+    target_field: "input_params"
+    max: 5
+    blocker_level: hard
+    rationale: ">5 params indicates the packet still needs decomposition"
+
+  - id: code_line_limit
+    name: "Code ≤50 lines per file"
+    check_type: "file_lines"
+    target_field: "code_refs"
+    max_lines: 50
+    allow_justification_field: "oversized_justified"
+    blocker_level: hard
+    rationale: "50 lines = 1 screen = human cognitive limit for a single unit"
+
+  - id: single_file_scope
+    name: "Single file scope (1 file per packet)"
+    check_type: "file_count"
+    target_field: "code_refs"
+    max: 1
+    allow_justification_field: "multi_file_justified"
+    blocker_level: hard
+    rationale: "Atomic packet touches exactly 1 file; >1 indicates coupling"
+
+  - id: context_token_limit
+    name: "Context ≤3000 tokens"
+    check_type: "estimated_tokens"
+    target_field: "description"
+    reference_fields: ["input_params", "acceptance_criteria"]
+    max_tokens: 3000
+    estimation_method: "word_count_x1_3"
+    blocker_level: soft
+    rationale: "3000 tokens ≈ 1 standard context window slice"
+
+  - id: l4_name_precision
+    name: "L4 packet name precise to function/method"
+    check_type: "regex_match"
+    target_field: "name"
+    pattern: '^[A-Z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]+$'
+    exempt_if: "packet_level != l4"
+    blocker_level: hard
+    rationale: "L4 packets must name exact function/method, not vague module"
+
+  - id: design_ref_mandatory
+    name: "@ref to Design §14 STEP"
+    check_type: "regex_match"
+    target_field: "design_ref"
+    pattern: '^Design §14 STEP [0-9]+(\.[0-9]+)*$'
+    exempt_if: "packet_level == l1"
+    blocker_level: hard
+    rationale: "Every L2+ packet must trace back to architecture blueprint"
+
+  - id: acceptance_criteria_single_sentence
+    name: "Acceptance criteria: one sentence, auto-verifiable"
+    check_type: "single_sentence"
+    target_field: "acceptance_criteria"
+    must_contain_verbs: ["→", "returns", "equals", "inserts", "updates", "deletes", "throws"]
+    blocker_level: hard
+    rationale: "Must be executable as a mental test case"
+
+# Packet level definitions
+packet_levels:
+  l1: "需求边界 / feature scope"
+  l2: "模块/组件级"
+  l3: "接口/契约级"
+  l4: "函数/方法级"
+
+# Token estimation fallback
+estimation:
+  method: word_count_x1_3
+  description: "tokens ≈ total_words × 1.3 (approximation for EN/CN mixed text)"
+  accuracy: "±30%"

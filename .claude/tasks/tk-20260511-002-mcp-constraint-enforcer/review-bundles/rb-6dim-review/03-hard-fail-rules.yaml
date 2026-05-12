@@ -1,0 +1,20 @@
+hard_fail_rules:
+  - id: HF1
+    text: "If any Hook bypass path allows unauthorized Write/Edit to state files, verdict = Fail"
+    severity: critical
+
+  - id: HF2
+    text: "If config cache hot-reload is proven to not work (mtime not checked), verdict = Fail"
+    severity: critical
+
+  - id: HF3
+    text: "If empty-string auditor_verdict bypass is not fixed, verdict = Fail"
+    severity: critical
+
+  - id: HF4
+    text: "If Hook is fail-open (allows operation when MCP unavailable), verdict = Fail"
+    severity: critical
+
+  - id: HF5
+    text: "If validate_write_permission has no path traversal protection, verdict = Fail"
+    severity: critical

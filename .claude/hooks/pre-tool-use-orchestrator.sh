@@ -30,10 +30,11 @@ HELPER_PATH="${SCRIPT_DIR}/hook-enforcer-helper.js"
 MCP_ALLOWED=""
 MCP_REASON=""
 
-if [ -f "$HELPER_PATH" ]; then
+# Verify node is available before invoking helper
+if [ -f "$HELPER_PATH" ] && command -v node >/dev/null 2>&1; then
     HELPER_INPUT=$(python3 -c "import json,sys; print(json.dumps({'file_path':sys.argv[1],'operation':sys.argv[2],'newContent':sys.argv[3]}))" "$FILE_PATH" "$TOOL_NAME" "$NEW_CONTENT" 2>/dev/null || echo "{}")
     HELPER_OUTPUT=$(echo "$HELPER_INPUT" | node "$HELPER_PATH" 2>/dev/null || echo "{}")
-    MCP_ALLOWED=$(echo "$HELPER_OUTPUT" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("true" if d.get("allowed",True) else "false")' 2>/dev/null || echo "true")
+    MCP_ALLOWED=$(echo "$HELPER_OUTPUT" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("true" if d.get("allowed",False) else "false")' 2>/dev/null || echo "false")
     MCP_REASON=$(echo "$HELPER_OUTPUT" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("reason",""))' 2>/dev/null || echo "")
 fi
 
