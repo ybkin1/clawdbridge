@@ -104,7 +104,16 @@ Write-Output "Block reason: $blockReason"
 Write-Output "-------------------------------------------"
 
 # 5a. Run checker reminder to identify gaps
-$reminderOutput = $stdin | powershell -NoProfile -File "C:\Users\Administrator\Documents\trae_projects\yb\.claude\hooks\checker-reminder.ps1" | Out-String
+$reminderScript = "C:\Users\Administrator\Documents\trae_projects\yb\.claude\hooks\checker-reminder.ps1"
+if (-not (Test-Path $reminderScript)) {
+    Write-Output "[WARNING] checker-reminder.ps1 not found. Cannot verify mechanical gaps."
+    Write-Output "[BLOCKED] Conservative block applied."
+    Write-Output "!!!"
+    Write-Output ""
+    exit 1
+}
+
+$reminderOutput = $stdin | powershell -NoProfile -File $reminderScript | Out-String
 
 if (-not ($reminderOutput -match "MECHANICAL GAP DETECTED")) {
     Write-Output "[PASS] No mechanical gaps detected. Proceeding."

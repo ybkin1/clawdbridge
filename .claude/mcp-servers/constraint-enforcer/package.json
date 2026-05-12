@@ -1,0 +1,15 @@
+{
+  "name": "constraint-enforcer-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for constraint enforcement in Claude Code spec architecture",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "js-yaml": "^4.1.0"
+  }
+}

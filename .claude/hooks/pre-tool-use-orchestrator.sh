@@ -72,7 +72,16 @@ echo "Block reason: ${BLOCK_REASON}"
 echo "-------------------------------------------"
 
 # Run checker reminder
-REMINDER_OUTPUT=$(echo "$STDIN" | bash "${PWD}/.claude/hooks/checker-reminder.sh" 2>/dev/null || echo "")
+REMINDER_SCRIPT="${PWD}/.claude/hooks/checker-reminder.sh"
+if [ ! -f "$REMINDER_SCRIPT" ]; then
+    echo "[WARNING] checker-reminder.sh not found. Cannot verify mechanical gaps."
+    echo "[BLOCKED] Conservative block applied."
+    echo "!!!"
+    echo ""
+    exit 1
+fi
+
+REMINDER_OUTPUT=$(echo "$STDIN" | bash "$REMINDER_SCRIPT" 2>/dev/null || echo "")
 
 if ! echo "$REMINDER_OUTPUT" | grep -q "MECHANICAL GAP DETECTED"; then
     echo "[PASS] No mechanical gaps detected. Proceeding."

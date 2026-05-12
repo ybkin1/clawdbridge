@@ -63,6 +63,10 @@ export const toolDefinitions = [
           enum: ["Write", "Edit"],
           description: "Tool name: Write or Edit.",
         },
+        newContent: {
+          type: "string",
+          description: "The new content being written (for state file tampering detection).",
+        },
       },
       required: ["filePath", "operation"],
     },

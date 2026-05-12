@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agent-orchestrator": {
+      "command": "node",
+      "args": ["C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\mcp-servers\\agent-orchestrator\\index.js"]
+    },
+    "constraint-enforcer": {
+      "command": "cmd",
+      "args": ["/c", "C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\.claude\\mcp-servers\\constraint-enforcer\\start-mcp.bat"]
+    }
+  }
+}
