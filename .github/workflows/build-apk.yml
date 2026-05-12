@@ -39,10 +39,12 @@ jobs:
       - run: chmod +x mobile/android/gradlew
 
       - name: Build APK
+        shell: bash
         run: |
+          set -eo pipefail
           cd mobile/android
           export ANDROID_HOME=$ANDROID_SDK_ROOT
-          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -50
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Verify APK exists
         run: ls -lh mobile/android/app/build/outputs/apk/release/
