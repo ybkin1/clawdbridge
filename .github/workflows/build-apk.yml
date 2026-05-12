@@ -6,6 +6,8 @@ on:
     branches: [master]
     paths:
       - '.github/workflows/build-apk.yml'
+      - 'mobile/android/build.gradle'
+      - 'mobile/android/app/build.gradle'
 
 jobs:
   build:
