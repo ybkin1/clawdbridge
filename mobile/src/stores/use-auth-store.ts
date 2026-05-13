@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
+
+const memoryStore: Record<string, string> = {};
+const SecureStore = {
+  setItemAsync: async (key: string, value: string) => { memoryStore[key] = value; },
+  getItemAsync: async (key: string) => memoryStore[key] ?? null,
+  deleteItemAsync: async (key: string) => { delete memoryStore[key]; },
+};
 import { getHttpClient } from '../services/http-client';
 import { getWsConnection, WsConnection } from '../services/ws-connection';
 

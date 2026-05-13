@@ -1,4 +1,4 @@
-import { WSConnection, getWSConnection } from './ws-connection';
+import { WsConnection, getWsConnection } from './ws-connection';
 
 interface PendingMessage { seq: number; message: unknown; timestamp: number; }
 
@@ -8,11 +8,11 @@ const PENDING_CLEANUP_MS = 60000; // cleanup interval
 export class WsSender {
   private pending = new Map<string, PendingMessage[]>();
   private seqs = new Map<string, number>();
-  private wsConnection: WSConnection;
+  private wsConnection: WsConnection;
   private cleanupTimer: ReturnType<typeof setInterval>;
 
   constructor() {
-    this.wsConnection = getWSConnection();
+    this.wsConnection = getWsConnection();
     this.cleanupTimer = setInterval(() => this.cleanupExpired(), PENDING_CLEANUP_MS);
   }
 
@@ -47,4 +47,13 @@ export class WsSender {
   }
 
   destroy(): void { clearInterval(this.cleanupTimer); }
+}
+
+let wsSenderInstance: WsSender;
+
+export function getWsSender(): WsSender {
+  if (!wsSenderInstance) {
+    wsSenderInstance = new WsSender();
+  }
+  return wsSenderInstance;
 }

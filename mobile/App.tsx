@@ -1,5 +1,7 @@
+import 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
 import { StatusBar, View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider } from './src/theme/theme-provider';
 import { RootNavigator } from './src/navigation';
 import { useAuthStore } from './src/stores/use-auth-store';
@@ -43,10 +45,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
-      <AppContent />
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
+        <AppContent />
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 
