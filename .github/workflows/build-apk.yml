@@ -40,6 +40,7 @@ jobs:
       - run: chmod +x mobile/android/gradlew
 
       - name: Build APK
+        id: build
         run: |
           cd mobile/android
           export ANDROID_HOME=$ANDROID_SDK_ROOT
@@ -54,7 +55,7 @@ jobs:
           find mobile/android -name "*.apk" 2>/dev/null || echo "No APK files found"
 
       - name: Upload APK Artifact
-        if: success()
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: clawdbridge-apk
@@ -62,7 +63,7 @@ jobs:
           retention-days: 90
 
       - name: Upload build logs
-        if: failure()
+        if: steps.build.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: build-logs
