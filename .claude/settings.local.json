@@ -10,7 +10,10 @@
       "Bash(ssh claude_aly \"cat ~/.claude/settings.json\")",
       "Bash(scp /c/Users/Administrator/Documents/trae_projects/yb/b6-evidence/05-reverse-index-and-lineage.md claude_aly:/opt/harness/docs/norms-archive/openclaw-codex-gate-refs/b6-owner-evidence/)",
       "Bash(ssh claude_aly \"cat /opt/harness/docs/harness-detailed-design-v1.md | head -200\")",
-      "Bash(ssh claude_aly \"grep -n 'harness_' /opt/harness/docs/harness-detailed-design-v1.md | head -60; echo '---'; grep -n 'CREATE TABLE' /opt/harness/docs/harness-detailed-design-v1.md | head -40\")"
+      "Bash(ssh claude_aly \"grep -n 'harness_' /opt/harness/docs/harness-detailed-design-v1.md | head -60; echo '---'; grep -n 'CREATE TABLE' /opt/harness/docs/harness-detailed-design-v1.md | head -40\")",
+      "Bash(python3 -c ':*)",
+      "Read(//c/ProgramData/**)",
+      "Read(//c//**)"
     ]
   },
   "hooks": {
@@ -20,8 +23,8 @@
         "hooks": [
           {
             "type": "command",
-            "shell": "powershell",
-            "command": "powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\.claude\\hooks\\pre-tool-use-orchestrator.ps1"
+            "command": "powershell -NoProfile -File C:\\Users\\Administrator\\Documents\\trae_projects\\yb\\.claude\\hooks\\pre-tool-use-orchestrator.ps1",
+            "shell": "powershell"
           }
         ]
       }

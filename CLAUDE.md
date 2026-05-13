@@ -1,8 +1,8 @@
 # CLAUDE.md — yb 项目开发规范入口
 
-> 生效机制：Claude Code / Trae 启动自动读取 → 链式引用 `.claude/CLAUDE.md` → 按 action_family 加载契约。
-> 版本: 3.0 | 来源: ybkin1/claude-code-rule | 部署日期: 2026-05-09
-> MCP: agent-orchestrator (4工具, 2-6 Agent 并行) | 规则文件: 7个 .trae/rules/*.md
+> 生效机制：Trae 启动自动注入 → 链式引用 `.claude/CLAUDE.md` → 按 action_family 加载契约。
+> 版本: 3.1 | 来源: ybkin1/claude-code-rule v2.0（八层分离模型） | 更新: 2026-05-13
+> 约束引擎: constraint-enforcer (10工具，已部署，Trae Agent 手动模拟) | 规则文件: 7个 .trae/rules/*.md | Agent定义: 9个 .claude/agents/*.md
 
 ---
 
@@ -16,13 +16,17 @@ Claude Code 启动
 每次任务：意图识别（intent-routing §3）→ 契约激活 → 意图确认 → 执行 → 评审 → 收口
 ```
 
-**完整规范体系**见 `.claude/` 目录：
-- `.claude/CLAUDE.md` — 规范内核入口（Karpathy 原则 + 7 元规则 + 契约导航）
-- `.claude/contracts/` — 27 个契约定义（`registry.yaml` 为注册表）
-- `.claude/checklists/` — 8 个 Stage 评审检查清单
-- `.claude/checkers/` — 3 个 Shell 校验脚本
+**完整规范体系**（八层分离模型 v2.0）见 `.claude/` 目录：
+- `.claude/CLAUDE.md` — 规范内核入口（Karpathy 原则 + 8 元规则 + 契约导航）
+- `.claude/contracts/` — 34 个契约定义（`registry.yaml` 为注册表）
+- `.claude/config/` — L2 配置层（6 个 YAML + 4 个 JSON Schema）
+- `.claude/agents/` — 9 个 Agent 角色定义（`.claude/agents/*.md`）
+- `.claude/checklists/` — 20 个 Stage 评审检查清单
+- `.claude/checkers/` — 19 个校验脚本（`.js` + `.sh` + `.ps1`）
+- `.claude/hooks/` — 10 个 Hook 拦截脚本（`.ps1` + `.sh` + `.py`）
+- `.claude/mcp-servers/` — L3 MCP 约束执行器（constraint-enforcer）
 - `.claude/memory/` — 4 层记忆架构
-- `.claude/project/checklists/` — 项目级检查清单
+- `.claude/settings.json` — Claude Code 运行时配置（Hook + MCP 注册）
 
 ### MCP 多 Agent 引擎
 
@@ -87,16 +91,19 @@ Claude Code 启动
 
 ---
 
-## Agent 集群
+## Agent 集群（9 个角色定义，见 `.claude/agents/`）
 
 | Agent | 专长 | 触发场景 |
 |-------|------|---------|
-| researcher | 信息检索、来源验证 | 深度调研 |
-| code-agent | 全栈开发、算法实现 | 功能开发 |
-| code-reviewer | 质量审查、一致性检查 | 代码/文档审查 |
-| designer-agent | UI/UX 设计 | 界面设计 |
-| architect-reviewer | 架构评审 | 模块分解 |
-| writer-agent | 技术/商务写作 | 报告文档 |
+| researcher | 信息检索、来源验证、多维度调研 | 深度调研、竞品分析 |
+| code-agent | 全栈开发、算法实现 | 功能开发、代码重构 |
+| code-reviewer | 安全/正确性/性能评审 | 代码审查 |
+| designer-agent | UI/UX 设计 | 界面设计、原型制作 |
+| architect-reviewer | 架构评审、模块分解 | 架构设计评审 |
+| writer-agent | 技术/商务写作 | 报告、文档 |
+| auditor | 机械合规审计、阶段门控验证 | 阶段推进前审计 |
+| prd-reviewer | PRD 完整性/一致性评审 | 产品需求评审 |
+| test-reviewer | 测试计划/覆盖率评审 | 测试策略评审 |
 
 ---
 

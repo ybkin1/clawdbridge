@@ -86,7 +86,7 @@ Auditor Agent 的 verdict 是只读的，主线程不得修改、不得忽略、
 
 ## 执行面声明
 
-本体系为**约定驱动**而非平台强制。所有规则通过 Agent 意识、评审清单执行。检查器目录（`.claude/checkers/`）当前包含 10 个可执行脚本，覆盖 state-projection、dirty-hygiene、dangling-reference 等检查面。完整 checker catalog 见 `verification-checker.md` §5。
+本体系为**约定驱动**而非平台强制。所有规则通过 Agent 意识、评审清单执行。检查器目录（`.claude/checkers/`）当前包含 19 个校验脚本（2 `.js` + 16 `.sh` + 1 `.ps1`，其中 12 已实现 + 7 placeholder），覆盖 state-projection、dirty-hygiene、dangling-reference、execution-traceability、atomicity 等检查面。完整 checker catalog 见 `checkers/index.yaml`。
 
 ---
 
@@ -99,7 +99,7 @@ Auditor Agent 的 verdict 是只读的，主线程不得修改、不得忽略、
 | `clarify` | `intent-capture` |
 | `research` | `context-governance`, `engineering-standards` |
 | `authoring` | `task-tracking`, `document-depth`（按 artifact_kind） |
-| `implementation` | `task-tracking`, `context-governance`, `work-packet-governance`, `architecture-blueprint`, `lego-assembly-workflow`, `skill-tool-mapping`, `cluster-orchestration`, `execution-traceability` |
+| `implementation` | `task-tracking`, `context-governance`, `work-packet-governance`, `architecture-blueprint`, `lego-assembly-workflow`, `action-governance`, `skill-tool-mapping`, `cluster-orchestration`, `execution-traceability` |
 | `verification` | `verification-checker`, `review-gates`, `engineering-standards`, `execution-traceability` |
 | `review` | `review-gates`, `review-consistency-checklist` |
 | `closeout` | `closeout`, `task-readme-lifecycle`, `dirty-hygiene`, `completeness-audit` |
@@ -129,7 +129,6 @@ Auditor Agent 的 verdict 是只读的，主线程不得修改、不得忽略、
 | `context-compaction` | 上下文压缩：55/70/85 梯度 |
 | `completeness-audit` | 完整性审计：3 道防线 |
 | `dirty-hygiene` | 脏数据/脏链路：检测+回收+验证 |
-| `storage-location` | 存储位置：禁止 C 盘写入 |
 | `storage-location` | 存储位置：禁止 C 盘写入 |
 | `document-depth` | 文档深度：深度/密级/成熟度 |
 | `engineering-standards` | 工程标准：治理接线 |

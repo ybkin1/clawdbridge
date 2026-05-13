@@ -223,8 +223,8 @@ export const toolDefinitions = [
         },
         operation: {
           type: "string",
-          enum: ["save", "load", "list"],
-          description: "save: create checkpoint; load: restore checkpoint; list: enumerate checkpoints.",
+          enum: ["save", "query", "restore", "list"],
+          description: "save: create checkpoint; query: read checkpoint without restoring; restore: atomic restore of task state + board; list: enumerate checkpoints.",
         },
         checkpoint_id: {
           type: "string",

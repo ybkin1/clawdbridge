@@ -37,7 +37,7 @@ contracts:
     owner: "claude-code"
     verification_mode: "manual"
     checklist_refs: []
-    checker_refs: ["config-sync-check"]
+    checker_refs: []
 
   intent-routing:
     version: 1
@@ -253,7 +253,7 @@ contracts:
 
   cluster-orchestration:
     version: 1
-    status: provisional
+    status: active
     effective_scope: [execution_orchestration_route=mandatory_multi_agent|recommended_multi_agent]
     depends_on: [task-tracking, work-packet-governance]
     conflicts_with: []

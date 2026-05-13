@@ -220,6 +220,21 @@ context_budget_policy_ref: "<checkpoint/compaction receipt 路径>"
 aggregation_artifact_path: "<fan-in report 路径>"  # parallelism_actual >= 2 时必需
 ```
 
+### 7.3 上下文预算预留协议（P2-3 fix）
+
+在多 Agent fan-out 前，主线程必须执行上下文预算预留检查：
+
+1. **预留比例**：为 delegation plan + manifest + fan-in report 预留 **15%** 的上下文预算。
+2. **触发条件**：
+   - 若 `current_budget_percent + 15% >= 70%`（逼近 compaction 阈值）：先触发 `context-compaction`，压缩后再执行 fan-out。
+   - 若 `current_budget_percent + 15% >= 85%`（逼近 hard limit）：禁止 fan-out，改为 `single_thread_exception`，理由代码为 `context_budget_insufficient_for_parallel_delegation`。
+3. **预留证据**：预留决策必须记录在 `00-task-state.yaml` 的 `context_budget_policy_ref` 字段，指向 compaction receipt 或 exception 文件。
+
+**为什么需要预留**：
+- 子 Agent 的 task payload（CONTEXT + CONSTRAINTS + DELIVERABLE）通常消耗 5-10% 的上下文预算
+- Fan-in report 的 synthesis 输出通常消耗 3-5%
+- 若无预留，fan-out 后预算可能从 60% 飙升至 75%，触发 mid-flight compaction，导致 manifest 失效
+
 ## 8. Fan-Out / Fan-In 工作流
 
 正式多 Agent 执行默认遵守：

@@ -266,6 +266,92 @@ if (wp) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Check 11: mechanical-conditions check_type values must be in declared check_types list
+// ---------------------------------------------------------------------------
+if (mc) {
+  const declaredTypes = new Set(mc.check_types || []);
+  for (const cond of mc.conditions || []) {
+    if (cond.check_type && !declaredTypes.has(cond.check_type)) {
+      errors.push(`mechanical-conditions condition '${cond.id}' uses undeclared check_type '${cond.check_type}' (not in check_types list)`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 12: atomicity-rules check_type values must be known
+// ---------------------------------------------------------------------------
+const atomicityFile = path.join(PROJECT_ROOT, ".claude", "config", "atomicity-rules.yaml");
+const atomicity = loadYaml(atomicityFile);
+const KNOWN_ATOMICITY_CHECK_TYPES = new Set([
+  "word_count", "array_length", "file_lines", "file_count",
+  "estimated_tokens", "regex_match", "single_sentence",
+]);
+if (atomicity) {
+  for (const rule of atomicity.rules || []) {
+    if (rule.check_type && !KNOWN_ATOMICITY_CHECK_TYPES.has(rule.check_type)) {
+      errors.push(`atomicity-rules rule '${rule.id}' uses unknown check_type '${rule.check_type}'`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 13: registry.yaml checklist_refs must point to existing checklist files
+// ---------------------------------------------------------------------------
+if (registry) {
+  const checklistsDir = path.join(PROJECT_ROOT, ".claude", "checklists");
+  for (const [cid, contract] of Object.entries(registry.contracts || {})) {
+    if (contract.status !== "active") continue;
+    const refs = contract.checklist_refs || [];
+    for (const ref of refs) {
+      const checklistPath = path.join(checklistsDir, `${ref}.md`);
+      const checklistYamlPath = path.join(checklistsDir, `${ref}.yaml`);
+      if (!fs.existsSync(checklistPath) && !fs.existsSync(checklistYamlPath)) {
+        errors.push(`registry contract '${cid}' references missing checklist: ${ref} (neither .md nor .yaml found in checklists/)`);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 14: checkers/index.yaml gate_bindings must match phase-state-machine gates
+// ---------------------------------------------------------------------------
+if (index && psm) {
+  const validGates = new Set();
+  for (const p of psm.phases || []) {
+    for (const g of p.gates || []) {
+      validGates.add(g);
+    }
+  }
+  for (const [cid, checker] of Object.entries(index.checkers || {})) {
+    const gateBinding = String(checker.gate_binding || "");
+    if (gateBinding) {
+      const boundGates = gateBinding.split(",").map((g) => g.trim()).filter(Boolean);
+      for (const bg of boundGates) {
+        if (!validGates.has(bg)) {
+          errors.push(`checker '${cid}' has gate_binding '${bg}' (from '${gateBinding}') not found in any phase`);
+        }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 15: config-meta.yaml must exist and have required sections
+// ---------------------------------------------------------------------------
+const metaFile = path.join(PROJECT_ROOT, ".claude", "config", "config-meta.yaml");
+const meta = loadYaml(metaFile);
+if (!meta) {
+  errors.push("config-meta.yaml missing or unreadable");
+} else {
+  const requiredSections = ["config_loader", "schema", "checker_runner", "agent_orchestrator"];
+  for (const section of requiredSections) {
+    if (!meta[section]) {
+      errors.push(`config-meta.yaml missing required section: ${section}`);
+    }
+  }
+}
+
 // Output
 if (errors.length > 0) {
   console.log("FAILED: config-sync-check");

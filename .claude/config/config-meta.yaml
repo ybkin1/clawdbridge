@@ -1,0 +1,67 @@
+# config-meta.yaml — MCP 约束执行器元配置
+# Purpose: Centralize all hard-coded constants from enforcer.js so that tuning
+#          does not require code changes. This is the L2 Config layer for the
+#          L3 MCP Enforcer itself (meta-configuration).
+#
+# Design principle: Any numeric threshold, timeout, or enum list that was
+# previously hard-coded in enforcer.js MUST live here.
+
+version: 1
+updated_at: "2026-05-13"
+
+# ---------------------------------------------------------------------------
+# Config Loader Settings
+# ---------------------------------------------------------------------------
+config_loader:
+  cache_max_age_ms: 5000        # P3-3: force refresh regardless of mtime
+  all_config_names:
+    - mechanical-conditions
+    - phase-state-machine
+    - write-permissions
+    - mcp-capabilities
+    - atomicity-rules
+    - agent-orchestration-rules
+
+# ---------------------------------------------------------------------------
+# Schema Version Compatibility
+# ---------------------------------------------------------------------------
+schema:
+  supported_version_min: 1
+  supported_version_max: 1
+
+# ---------------------------------------------------------------------------
+# Checker Runner Settings
+# ---------------------------------------------------------------------------
+checker_runner:
+  timeout_ms: 60000             # max wall-clock time per checker
+  kill_grace_ms: 5000           # extra time before SIGKILL after timeout
+  max_concurrency: 3            # parallel checker execution limit
+  allowed_extensions:
+    - .sh
+    - .ps1
+    - .js
+
+# ---------------------------------------------------------------------------
+# Bash Command Validation
+# ---------------------------------------------------------------------------
+bash_validation:
+  max_command_length: 10000     # reject commands >10k chars (regex safety)
+
+# ---------------------------------------------------------------------------
+# Agent Orchestrator Settings
+# ---------------------------------------------------------------------------
+agent_orchestrator:
+  worker_group_size: 3          # packets per sub-orchestrator when >3 packets
+  valid_decisions:
+    - multi_packet_parallel
+    - single_packet_direct
+    - single_thread_exception
+
+# ---------------------------------------------------------------------------
+# Token Estimation
+# ---------------------------------------------------------------------------
+token_estimation:
+  en_word_divisor: 0.75         # 1 EN word ≈ 0.75 tokens
+  cn_char_multiplier: 1.0       # 1 CJK char ≈ 1 token
+  safety_margin: 1.3            # P3-4: multiply raw estimate by this
+  accuracy: "±30%"

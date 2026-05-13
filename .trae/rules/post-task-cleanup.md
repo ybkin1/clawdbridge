@@ -16,7 +16,7 @@
   - [ ] 项目根目录下是否有本次任务产生的临时文件（*.tmp, draft*, WIP*）？
   - [ ] .claude/tasks/ 下是否有未归档的中间产出？
   - [ ] Downloads/ 或 Desktop/ 是否有任务相关的暂存文件？
-  - [ ] .trae/memory/ 是否需要更新本次任务的决策记录？
+  - [ ] .claude/memory/ 是否需要更新本次任务的决策记录？
 ```
 
 ### Step 2: 分类处置
@@ -34,10 +34,10 @@
 
 | 信息类型 | 写入位置 |
 |---------|---------|
-| 用户偏好/风格变更 | `.trae/memory/user-preferences.md` |
-| 技术决策/架构选择 | `.trae/memory/project-decisions.md` |
-| 反复踩坑/教训 | `.trae/memory/pitfalls.md` |
-| 环境/配置变更 | `.trae/memory/environment.md` |
+| 用户偏好/风格变更 | `.claude/memory/user-preferences.md` |
+| 技术决策/架构选择 | `.claude/memory/project-decisions.md` |
+| 反复踩坑/教训 | `.claude/memory/pitfalls.md` |
+| 环境/配置变更 | `.claude/memory/environment.md` |
 
 ### Step 4: 验证
 

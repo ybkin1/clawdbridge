@@ -176,7 +176,19 @@ async function testRequestPhaseTransition() {
   state.gate_contract = { status: "passed" };
   fs.writeFileSync(stateFile, yaml.dump(state));
 
-  // After evidence lock + fixed checker, readiness should pass
+  // Create Auditor receipt (P0-1 fix requires receipt file)
+  const reviewsDir = path.join(TEST_TASK_DIR, "reviews");
+  fs.mkdirSync(reviewsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(reviewsDir, "receipt-auditor.yaml"),
+    yaml.dump({
+      auditor_verdict: "audited",
+      evidence_lock_hash: "",
+      reviewed_at: new Date().toISOString(),
+    })
+  );
+
+  // After evidence lock + fixed checker + auditor receipt, readiness should pass
   const readiness = await checkPhaseReadiness({ taskDir: TEST_TASK_DIR });
   console.log("Readiness before transition:", JSON.stringify(readiness, null, 2));
 
@@ -428,15 +440,15 @@ async function testCheckpointSync() {
   assert(lst.success === true, "List should succeed");
   assert(lst.count === 1, "Should list 1 checkpoint");
 
-  // Load
-  const load = await checkpointSync({
+  // Query (read without restore)
+  const qry = await checkpointSync({
     taskDir: TEST_TASK_DIR,
-    operation: "load",
+    operation: "query",
     checkpoint_id: "cp-test-001",
   });
-  assert(load.success === true, "Load should succeed");
-  assert(load.snapshot.checkpoint_id === "cp-test-001", "Loaded checkpoint ID should match");
-  assert(load.snapshot.task_state.task_id === "tk-test-001", "Task state should be captured");
+  assert(qry.success === true, "Query should succeed");
+  assert(qry.snapshot.checkpoint_id === "cp-test-001", "Queried checkpoint ID should match");
+  assert(qry.snapshot.task_state.task_id === "tk-test-001", "Task state should be captured");
 }
 
 // ---------------------------------------------------------------------------

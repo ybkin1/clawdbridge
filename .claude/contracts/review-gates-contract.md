@@ -308,7 +308,12 @@ review_provenance_manifest:
 | 无 failed 状态的 direct checker（除非有 approved exception） | checker result YAML | gate 自动 failed |
 | Review receipt 引用所有 checker runs | receipt YAML 的 `checker_runs[]` | gate 不得 passed |
 | receipt 的 `findings_summary` 与 report 一致 | 交叉验证 | professional gate 不得 passed |
-| Auditor verdict = audited | `reviews/audit-report-*.yaml` | gate 不得 passed |
+| Auditor verdict = audited | `reviews/receipt-auditor.yaml` | gate 不得 passed |
+
+**Auditor 豁免规则（P2-1 fix）**：
+- `value` gate 是主观判断（"产出是否满足用户真实诉求"），无法由 Auditor 客观验证。
+- 因此，`value` gate **豁免** Auditor verdict 要求，改为要求 `manual_verification_required` 证据（由 Agent/用户确认后记录在 `reviews/receipt-value.yaml`）。
+- `professional` 和 `contract` gate 仍需 Auditor verdict = audited。
 
 ### 18.2 Checker Run Reference in Receipt
 

@@ -108,7 +108,9 @@ research ──→ architecture-decomposition ──→ spec
 | 5 | 脏数据/脏链路已清理 | `checkers/dirty-hygiene-closure-check` result = passed | checker result |
 | 6 | `00-task-state.yaml` 已更新 | `updated_at` 晚于当前 phase 主产出最后修改时间 | 时间戳比较 |
 | 7 | **强制检查器全部通过或有已批准异常** | `checkers/<checker_id>-<run_id>.yaml` | 见 §4.2.2 |
-| 8 | **Auditor 验证通过** | `reviews/audit-report-*.yaml` | 见 §4.2.4 |
+| 8 | **Auditor 验证通过** | `reviews/receipt-auditor.yaml` | 见 §4.2.4 |
+| 9 | **Evidence Lock 存在** | `checkers/evidence-lock-<phase>.yaml` | clarify 阶段豁免 |
+| 10 | **closeout_allowed 不为 true** | `00-task-state.yaml` | soft blocker（仅警告） |
 
 #### 4.2.2 强制检查器验证协议
 
@@ -131,13 +133,13 @@ ELSE:
 
 1. 主线程触发 Auditor Agent（只读权限）
 2. Auditor 按 `verification-checker.md` §11.3 的 7 项检查清单执行验证
-3. Auditor 产出 `audit-report.yaml`，写入 `reviews/audit-report-phase_transition-<timestamp>.yaml`
-4. 主线程读取 audit report：
+3. Auditor 产出 `receipt-auditor.yaml`，写入 `reviews/receipt-auditor.yaml`
+4. 主线程读取 receipt：
    - `verdict=audited` → 条件 8 满足，允许 transition
    - `verdict=mechanical_gap` → 条件 8 不满足，阻断 transition，返回 gap 列表修复
    - `verdict=insufficient_evidence` → 条件 8 不满足，要求补充证据后重新触发 Auditor
 
-**硬规则**：主线程不得覆盖 Auditor verdict。若检测到覆盖 → 标记 `tamper_detected`，task 进入 `blocked`。
+**硬规则**：主线程不得覆盖 Auditor verdict。Auditor verdict 只能从 `reviews/receipt-auditor.yaml` 读取，不得从 `00-task-state.yaml` 的 `auditor_verdict` 字段读取。若检测到 mutable state 中的 `auditor_verdict` 被覆盖 → 标记 `tamper_detected`，task 进入 `blocked`。
 
 #### 4.2.5 阻断语义
 

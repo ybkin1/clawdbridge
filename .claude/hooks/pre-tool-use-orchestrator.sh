@@ -10,14 +10,45 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# P3-6 fix: JSON parser fallback — python3 > jq > node inline
+JSON_PARSER=""
+if command -v python3 >/dev/null 2>&1; then
+    JSON_PARSER="python3"
+elif command -v jq >/dev/null 2>&1; then
+    JSON_PARSER="jq"
+elif command -v node >/dev/null 2>&1; then
+    JSON_PARSER="node"
+fi
+
 # Capture stdin
 STDIN=$(cat)
 
 # Parse tool info from stdin
-TOOL_NAME=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("tool_name",""))' 2>/dev/null || echo "")
-FILE_PATH=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin); ti=d.get("tool_input",{}); print(ti.get("file_path",""))' 2>/dev/null || echo "")
-NEW_CONTENT=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin); ti=d.get("tool_input",{}); print(ti.get("content",ti.get("new_string","")))' 2>/dev/null || echo "")
-BASH_COMMAND=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin); ti=d.get("tool_input",{}); print(ti.get("command",""))' 2>/dev/null || echo "")
+if [ "$JSON_PARSER" = "python3" ]; then
+    TOOL_NAME=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("tool_name",""))' 2>/dev/null || echo "")
+    FILE_PATH=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin); ti=d.get("tool_input",{}); print(ti.get("file_path",""))' 2>/dev/null || echo "")
+    NEW_CONTENT=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin); ti=d.get("tool_input",{}); print(ti.get("content",ti.get("new_string","")))' 2>/dev/null || echo "")
+    BASH_COMMAND=$(echo "$STDIN" | python3 -c 'import sys,json; d=json.load(sys.stdin); ti=d.get("tool_input",{}); print(ti.get("command",""))' 2>/dev/null || echo "")
+elif [ "$JSON_PARSER" = "jq" ]; then
+    TOOL_NAME=$(echo "$STDIN" | jq -r '.tool_name // ""' 2>/dev/null || echo "")
+    FILE_PATH=$(echo "$STDIN" | jq -r '.tool_input.file_path // ""' 2>/dev/null || echo "")
+    NEW_CONTENT=$(echo "$STDIN" | jq -r '.tool_input.content // .tool_input.new_string // ""' 2>/dev/null || echo "")
+    BASH_COMMAND=$(echo "$STDIN" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")
+elif [ "$JSON_PARSER" = "node" ]; then
+    PARSED=$(echo "$STDIN" | node "${SCRIPT_DIR}/json-parse-helper.js" 2>/dev/null || echo "{}")
+    TOOL_NAME=$(echo "$PARSED" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const o=JSON.parse(d);console.log(o.tool_name||'')catch{console.log('')}})")
+    FILE_PATH=$(echo "$PARSED" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const o=JSON.parse(d);console.log(o.file_path||'')catch{console.log('')}})")
+    NEW_CONTENT=$(echo "$PARSED" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const o=JSON.parse(d);console.log(o.content||'')catch{console.log('')}})")
+    BASH_COMMAND=$(echo "$PARSED" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const o=JSON.parse(d);console.log(o.command||'')catch{console.log('')}})")
+else
+    echo ""
+    echo "!!! PRE-TOOL BLOCKING CHECK TRIGGERED !!!"
+    echo "Block reason: No JSON parser available (python3, jq, or node required)."
+    echo "[BLOCKED] Cannot validate tool inputs without a JSON parser."
+    echo "!!!"
+    echo ""
+    exit 1
+fi
 
 HELPER_PATH="${SCRIPT_DIR}/hook-enforcer-helper.js"
 ROLE="${AGENT_ROLE:-}"
@@ -82,11 +113,11 @@ if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" ]] && [ -n "$FILE_PATH" 
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Bash redirection detection (P0-2 fix)
+# 2. Bash redirection and disk-write command detection (P0-5 fix)
 # ---------------------------------------------------------------------------
 if [[ "$TOOL_NAME" == "Bash" ]] && [ -n "$BASH_COMMAND" ]; then
-    # Extract redirect targets from bash command
-    REDIRECT_TARGETS=$(echo "$BASH_COMMAND" | python3 -c '
+    # Extract redirect targets and disk-write command targets from bash command
+    ALL_TARGETS=$(echo "$BASH_COMMAND" | python3 -c '
 import sys, re, json
 cmd = sys.stdin.read()
 targets = set()
@@ -96,6 +127,18 @@ for m in re.finditer(r"\d*\s*[>][&>]?\s*(\S+)", cmd):
 # Match | tee file, | tee -a file
 for m in re.finditer(r"\|\s*tee\s+(?:-[a-z]+\s+)?(\S+)", cmd):
     targets.add(m.group(1))
+# P0-5: Match cp/mv destination (last non-option arg)
+for m in re.finditer(r"(?:^|[;|&]|\$\()\s*(cp|mv)(?:\s+-[a-zA-Z]+)*(\s+\S+\s+\S+)", cmd):
+    tokens = m.group(2).strip().split()
+    non_opt = [t for t in tokens if not t.startswith("-")]
+    if len(non_opt) >= 2:
+        targets.add(non_opt[-1])
+# P0-5: Match touch/rm/mkdir targets (all non-option args)
+for m in re.finditer(r"(?:^|[;|&]|\$\()\s*(touch|rm|mkdir)(?:\s+-[a-zA-Z]+)*((?:\s+\S+)+)", cmd):
+    tokens = m.group(2).strip().split()
+    for t in tokens:
+        if not t.startswith("-"):
+            targets.add(t)
 # Filter out safe targets
 filtered = [t for t in targets if not t.startswith("/dev/") and not t.startswith("-") and not t.startswith(">")]
 print(json.dumps(filtered))
@@ -105,7 +148,7 @@ print(json.dumps(filtered))
     BLOCK_REASON=""
     BLOCK_TARGET=""
 
-    for target in $(echo "$REDIRECT_TARGETS" | python3 -c 'import sys,json; arr=json.load(sys.stdin); print("\n".join(arr))' 2>/dev/null); do
+    for target in $(echo "$ALL_TARGETS" | python3 -c 'import sys,json; arr=json.load(sys.stdin); print("\n".join(arr))' 2>/dev/null); do
         if [ -z "$target" ]; then continue; fi
         RESULT=$(call_helper "$target" "Write" "" "$ROLE")
         if [ "$RESULT" = "unavailable" ]; then
@@ -126,9 +169,9 @@ print(json.dumps(filtered))
         echo ""
         echo "!!! PRE-TOOL BLOCKING CHECK TRIGGERED !!!"
         echo "Operation: Bash -> ${BASH_COMMAND}"
-        echo "Redirect target: ${BLOCK_TARGET}"
+        echo "Target: ${BLOCK_TARGET}"
         echo "Block reason: ${BLOCK_REASON}"
-        echo "[BLOCKED] Bash redirect blocked."
+        echo "[BLOCKED] Bash operation blocked."
         echo "!!!"
         echo ""
         exit 1

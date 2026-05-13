@@ -69,4 +69,4 @@ behavior:
   unknown_check_type_policy:
     fallback_status: "manual_review_required"
     log_warning: true
-    do_not_block: true
+    do_not_block: false
