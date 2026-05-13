@@ -19,9 +19,9 @@ for f in $TASK_ROOT/.claude/tasks/*/work-packets.yaml; do
     while IFS= read -r line; do
         if echo "$line" | grep -q "max_lines:"; then
             val=$(echo "$line" | sed 's/.*max_lines:\s*//')
-            if [ "$val" -gt 50 ] 2>/dev/null; then
+            if [[ "$val" =~ ^[0-9]+$ ]] && [ "$val" -gt 50 ]; then
                 # Check for oversized_justified
-                packet_ctx=$(grep -B5 -A2 "$line" "$f" || true)
+                packet_ctx=$(grep -F -B5 -A2 "$line" "$f" || true)
                 if ! echo "$packet_ctx" | grep -q "oversized_justified"; then
                     ERRORS+=("Packet max_lines=$val > 50 without oversized_justified: $f")
                 fi

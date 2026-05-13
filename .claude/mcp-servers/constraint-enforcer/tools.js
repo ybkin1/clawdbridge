@@ -148,7 +148,8 @@ export const toolDefinitions = [
     name: "agent_orchestrator",
     description:
       "Validate a work packet manifest for Agent cluster orchestration. " +
-      "Checks atomicity rules (description ≤15 words, params ≤5, lines ≤50), " +
+      "Checks atomicity rules defined in atomicity-rules.yaml (description brevity, " +
+      "input param limit, code line limit, single file scope, etc.), " +
       "pre-assigns agent IDs, and writes the orchestrator plan. " +
       "Must be called before spawning Sub-Orchestrator or Worker Agents.",
     inputSchema: {

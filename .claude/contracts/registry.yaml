@@ -37,7 +37,7 @@ contracts:
     owner: "claude-code"
     verification_mode: "manual"
     checklist_refs: []
-    checker_refs: []
+    checker_refs: ["config-sync-check"]
 
   intent-routing:
     version: 1
@@ -188,7 +188,7 @@ contracts:
     owner: "claude-code"
     verification_mode: "automated"
     checklist_refs: []
-    checker_refs: []
+    checker_refs: ["config-sync-check"]
 
   exception-governance:
     version: 1

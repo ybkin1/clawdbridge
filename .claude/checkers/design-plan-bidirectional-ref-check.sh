@@ -27,8 +27,8 @@ if ! grep -q "plan_to_design:" "$MATRIX_FILE"; then
 fi
 
 # Count orphan entries (simplified: entries with empty mapping)
-orphan_design=$(grep -c "design_to_plan:.*{}" "$MATRIX_FILE" 2>/dev/null || echo 0)
-orphan_plan=$(grep -c "plan_to_design:.*{}" "$MATRIX_FILE" 2>/dev/null || echo 0)
+orphan_design=$(grep -c 'design_to_plan:.*{}' "$MATRIX_FILE" 2>/dev/null || echo 0)
+orphan_plan=$(grep -c 'plan_to_design:.*{}' "$MATRIX_FILE" 2>/dev/null || echo 0)
 
 if [ "$orphan_design" -gt 0 ]; then
     ERRORS+=("Found $orphan_design orphan design STEP(s) without plan coverage")

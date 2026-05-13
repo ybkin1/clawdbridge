@@ -5,6 +5,12 @@
       "args": [
         ".claude/mcp-servers/constraint-enforcer/index.js"
       ]
+    },
+    "agent-orchestrator": {
+      "command": "node",
+      "args": [
+        "mcp-servers/agent-orchestrator/index.js"
+      ]
     }
   },
   "hooks": {

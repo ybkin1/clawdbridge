@@ -169,7 +169,8 @@ function validateConfigs() {
         );
       }
     }
-    // Light-weight schema validation: check required fields from JSON Schema
+    // Optional extended validation: JSON Schema files in schemas/ are not required.
+    // If present, they enable stricter field-level checks. Missing schemas are silently skipped.
     const schemaPath = path.join(CONFIG_DIR, "schemas", `${name}.schema.json`);
     if (fs.existsSync(schemaPath)) {
       try {
@@ -414,11 +415,26 @@ async function evaluateCondition(cond, state, taskDir, checkerIndex = null) {
       };
     }
 
-    default:
+    default: {
+      // M-3 fix: consult unknown_check_type_policy from mcp-capabilities.yaml
+      const mcpCap = loadConfig("mcp-capabilities");
+      const policy = mcpCap?.behavior?.unknown_check_type_policy;
+      if (policy?.do_not_block) {
+        const warning = `Condition '${cond.id}': Unknown check_type '${checkType}' — ${policy.fallback_status || "manual_review_required"}.`;
+        if (policy.log_warning) {
+          console.error("[MCP Policy]", warning);
+        }
+        return {
+          passed: true,
+          gap: null,
+          warning,
+        };
+      }
       return {
         passed: false,
         gap: `Condition '${cond.id}': Unknown check_type '${checkType}' — no handler implemented. This is a configuration error.`,
       };
+    }
   }
 }
 
@@ -511,9 +527,10 @@ function runBashChecker(scriptPath, cwd, checkerRoot) {
     });
   }
 
-  // Security: extension whitelist
+  // Security: extension whitelist (H-5 + M-2 fix)
   const ext = path.extname(resolved).toLowerCase();
-  if (ext !== ".sh" && ext !== ".ps1") {
+  const allowedExts = [".sh", ".ps1", ".js"];
+  if (!allowedExts.includes(ext)) {
     return Promise.resolve({
       output: `[BLOCKED] disallowed script extension: ${ext}`,
       status: "blocked",
@@ -526,8 +543,17 @@ function runBashChecker(scriptPath, cwd, checkerRoot) {
     let stderr = "";
     const timeoutMs = 60000;
     const isWin = process.platform === "win32";
-    const shell = ext === ".ps1" && isWin ? "powershell" : "bash";
-    const shellArgs = ext === ".ps1" && isWin ? ["-File", scriptPath, cwd] : [scriptPath, cwd];
+    let shell, shellArgs;
+    if (ext === ".ps1" && isWin) {
+      shell = "powershell";
+      shellArgs = ["-File", scriptPath, cwd];
+    } else if (ext === ".js") {
+      shell = "node";
+      shellArgs = [scriptPath, cwd];
+    } else {
+      shell = "bash";
+      shellArgs = [scriptPath, cwd];
+    }
     const child = spawn(shell, shellArgs, { cwd, timeout: timeoutMs });
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
@@ -537,7 +563,15 @@ function runBashChecker(scriptPath, cwd, checkerRoot) {
         resolve({ output: output + "\n[TIMED OUT]", status: "blocked", exitCode: -1 });
         return;
       }
-      // §10.1 precise status mapping
+      // §10.1 precise status mapping — prefer structured last line
+      const lines = output.trim().split(/\r?\n/);
+      const lastLine = lines[lines.length - 1] || "";
+      const structuredMatch = lastLine.match(/__STATUS__:(passed|failed|blocked|warning)/i);
+      if (structuredMatch) {
+        resolve({ output, status: structuredMatch[1].toLowerCase(), exitCode: code });
+        return;
+      }
+      // Fallback to legacy string matching
       if (code !== 0) {
         resolve({ output, status: "blocked", exitCode: code });
         return;
@@ -805,13 +839,17 @@ export async function validateWritePermission(args = {}) {
     return { allowed: false, reason: "BLOCKED: No active task found; cannot validate permission." };
   }
 
-  // Security: path traversal guard with symlink resolution
+  // Security: null-byte / control character guard
+  if (/[\x00-\x1f]/.test(filePath)) {
+    return { allowed: false, reason: "BLOCKED: Path contains control characters." };
+  }
+
+  // Security: path traversal guard with symlink resolution (H-4 fix)
   let resolvedFile, resolvedTaskDir;
   try {
-    resolvedTaskDir = fs.realpathSync(taskDir);
-    // For the target file, use realpathSync only if it exists; otherwise fall back to path.resolve
-    const rawResolved = path.resolve(filePath);
-    resolvedFile = fs.existsSync(rawResolved) ? fs.realpathSync(rawResolved) : rawResolved;
+    resolvedTaskDir = path.normalize(fs.realpathSync(taskDir));
+    const rawResolved = path.normalize(path.resolve(filePath));
+    resolvedFile = fs.existsSync(rawResolved) ? path.normalize(fs.realpathSync(rawResolved)) : rawResolved;
   } catch (err) {
     return { allowed: false, reason: "BLOCKED: Cannot resolve file path for security check." };
   }
@@ -910,24 +948,72 @@ export async function validateWritePermission(args = {}) {
 
 function extractBashRedirectionTargets(command) {
   if (!command || typeof command !== "string") return [];
+  // Length cap to prevent regex backtracking attacks (P0-2 fix)
+  if (command.length > 10000) return [];
+
+  // Strip heredoc bodies to avoid matching > inside heredoc content.
+  // Heredoc start: <<EOF, <<'EOF', <<-EOF. We remove everything after the marker
+  // on the same line and all subsequent lines until the closing delimiter.
+  // This is a best-effort filter for single-line command strings.
+  const lines = command.split("\n");
+  let inHeredoc = false;
+  let heredocDelim = null;
+  const filteredLines = [];
+  for (const line of lines) {
+    if (inHeredoc) {
+      if (line.trim() === heredocDelim) {
+        inHeredoc = false;
+        heredocDelim = null;
+      }
+      continue;
+    }
+    const heredocMatch = line.match(/<<\s*[-]?\s*['"]?([A-Za-z_]\w*)['"]?/);
+    if (heredocMatch) {
+      heredocDelim = heredocMatch[1];
+      inHeredoc = true;
+      // Keep the heredoc start line so that redirects on the same line (e.g. <<EOF > file)
+      // are still processed by the regex below.
+      filteredLines.push(line);
+      continue;
+    }
+    filteredLines.push(line);
+  }
+  const cmd = filteredLines.join("\n");
+
   const targets = [];
   // Match >file, >> file, 2>file, &>file, etc.
   const redirectRe = /\d*\s*[>][&>]?\s*(\S+)/g;
   let m;
-  while ((m = redirectRe.exec(command)) !== null) {
+  while ((m = redirectRe.exec(cmd)) !== null) {
     targets.push(m[1]);
   }
   // Match | tee file, | tee -a file
   const teeRe = /\|\s*tee\s+(?:-[a-z]+\s+)?(\S+)/g;
-  while ((m = teeRe.exec(command)) !== null) {
+  while ((m = teeRe.exec(cmd)) !== null) {
     targets.push(m[1]);
   }
-  // Filter out safe prefixes like /dev/null, -
-  return targets.filter((t) => !t.startsWith("/dev/") && t !== "-");
+  // Match process substitution output: >(tee -a file) or >(cat > file)
+  const procSubRe = />\s*\(\s*(?:tee\s+(?:-[a-z]+\s+)?|cat\s+(?:-[a-z]+\s+)*[>]?\s*)(\S+)\s*\)/g;
+  while ((m = procSubRe.exec(cmd)) !== null) {
+    targets.push(m[1]);
+  }
+  // Filter out safe prefixes and process substitution artifacts
+  return targets.filter((t) => !t.startsWith("/dev/") && t !== "-" && !t.startsWith("(") && !t.includes(")"));
 }
 
 export async function validateBashCommand(args = {}) {
   const { command, taskDir, role } = args;
+  // Input validation (P0-2 fix)
+  if (!command || typeof command !== "string") {
+    return { allowed: false, reason: "Bash command is missing or not a string." };
+  }
+  if (command.length === 0) {
+    return { allowed: true, reason: "Empty command — no redirection to validate." };
+  }
+  if (command.length > 10000) {
+    return { allowed: false, reason: "Bash command exceeds maximum length (10000 chars)." };
+  }
+
   const targets = extractBashRedirectionTargets(command);
   if (targets.length === 0) {
     return { allowed: true, reason: "No file-writing redirection detected." };
@@ -1172,13 +1258,27 @@ export async function requestPhaseTransition(args = {}) {
 
   // Step 6: Atomic state write with rollback on failure (R-006 fix)
   const tempFile = `${stateFile}.tmp`;
+  let originalContent = null;
   let writeError = null;
   try {
+    // Snapshot original state for rollback
+    if (fs.existsSync(stateFile)) {
+      originalContent = fs.readFileSync(stateFile, "utf8");
+    }
     fs.writeFileSync(tempFile, yaml.dump(state));
     fs.renameSync(tempFile, stateFile);
   } catch (err) {
     writeError = err;
-    // Rollback: delete temp file if it exists
+    // Rollback: restore original content if snapshot exists
+    if (originalContent !== null) {
+      try {
+        fs.writeFileSync(stateFile, originalContent);
+      } catch (restoreErr) {
+        // If restore also fails, at least tempFile has the new state
+        console.error("CRITICAL: State file write failed AND rollback failed:", restoreErr.message);
+      }
+    }
+    // Cleanup temp file
     try {
       if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
     } catch {
@@ -1625,7 +1725,10 @@ export async function agentOrchestrator(args = {}) {
     })),
     status: "approved",
   };
-  fs.writeFileSync(planFile, yaml.dump(planDoc));
+  // M-4 fix: atomic write for plan file
+  const planTempFile = `${planFile}.tmp`;
+  fs.writeFileSync(planTempFile, yaml.dump(planDoc));
+  fs.renameSync(planTempFile, planFile);
 
   return {
     allowed: true,

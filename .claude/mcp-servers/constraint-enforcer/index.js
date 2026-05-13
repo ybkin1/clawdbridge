@@ -18,6 +18,10 @@ import {
   generateEvidenceLock,
   requestPhaseTransition,
   getCheckerCatalog,
+  getActiveContractSet,
+  agentOrchestrator,
+  agentStatus,
+  checkpointSync,
 } from "./enforcer.js";
 
 const server = new Server(
@@ -53,6 +57,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       case "get_checker_catalog":
         result = await getCheckerCatalog();
+        break;
+      case "get_active_contract_set":
+        result = await getActiveContractSet(args);
+        break;
+      case "agent_orchestrator":
+        result = await agentOrchestrator(args);
+        break;
+      case "agent_status":
+        result = await agentStatus(args);
+        break;
+      case "checkpoint_sync":
+        result = await checkpointSync(args);
         break;
       default:
         throw new Error(`Unknown tool: ${name}`);

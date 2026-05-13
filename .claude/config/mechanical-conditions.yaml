@@ -33,7 +33,7 @@ check_types:
 
 conditions:
   - id: phase_status_passed
-    source: "task-tracking-workflow-spec.md §4.2.1-1"
+    source: "task-tracking-workflow-spec.md §4.2.1"
     description: "当前 phase 的 phase_status = passed"
     check_type: "field_equals"
     target: "00-task-state.yaml"
@@ -42,7 +42,7 @@ conditions:
     blocker_level: "hard"
 
   - id: gates_all_passed
-    source: "task-tracking-workflow-spec.md §4.2.1-2"
+    source: "task-tracking-workflow-spec.md §4.2.1"
     description: "当前 phase 对应的 gate 全部通过"
     check_type: "gate_results_all_passed"
     target: "00-task-state.yaml"
@@ -50,7 +50,7 @@ conditions:
     blocker_level: "hard"
 
   - id: primary_artifact_exists_nonempty
-    source: "task-tracking-workflow-spec.md §4.2.1-3"
+    source: "task-tracking-workflow-spec.md §4.2.1"
     description: "主产出 artifact 存在且非空"
     check_type: "file_exists_and_size_gt_0"
     target: "00-task-state.yaml"
@@ -58,7 +58,7 @@ conditions:
     blocker_level: "hard"
 
   - id: no_unresolved_blocker
-    source: "task-tracking-workflow-spec.md §4.2.1-4"
+    source: "task-tracking-workflow-spec.md §4.2.1"
     description: "无 unresolved blocker"
     check_type: "field_empty_or_null"
     target: "00-task-state.yaml"
@@ -66,7 +66,7 @@ conditions:
     blocker_level: "hard"
 
   - id: dirty_hygiene_passed
-    source: "task-tracking-workflow-spec.md §4.2.1-5"
+    source: "task-tracking-workflow-spec.md §4.2.1"
     description: "脏数据/脏链路已清理"
     check_type: "checker_result_status"
     target: "checkers/"
@@ -75,7 +75,7 @@ conditions:
     blocker_level: "hard"
 
   - id: state_freshness
-    source: "task-tracking-workflow-spec.md §4.2.1-6"
+    source: "task-tracking-workflow-spec.md §4.2.1"
     description: "updated_at 晚于主产出最后修改时间"
     check_type: "timestamp_freshness"
     target: "00-task-state.yaml"
@@ -84,7 +84,7 @@ conditions:
     blocker_level: "hard"
 
   - id: mandatory_checkers_passed_or_excepted
-    source: "task-tracking-workflow-spec.md §4.2.1-7"
+    source: "task-tracking-workflow-spec.md §4.2.1"
     description: "强制检查器全部通过或有已批准异常"
     check_type: "mandatory_checkers_all_passed_or_excepted"
     target: "route-projection.yaml"
@@ -92,7 +92,7 @@ conditions:
     blocker_level: "hard"
 
   - id: auditor_verdict_audited
-    source: "task-tracking-workflow-spec.md §4.2.1-8"
+    source: "task-tracking-workflow-spec.md §4.2.1"
     description: "Auditor 验证通过"
     check_type: "field_equals"
     target: "00-task-state.yaml"
