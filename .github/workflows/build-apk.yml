@@ -7,14 +7,11 @@ on:
     paths:
       - '.github/workflows/build-apk.yml'
       - 'mobile/android/build.gradle'
-      - 'mobile/android/app/build.gradle'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -32,13 +29,9 @@ jobs:
         with:
           packages: 'platforms;android-35 build-tools;35.0.0 ndk;26.1.10909125 platform-tools cmdline-tools;latest'
 
-      - name: Create local.properties
-        run: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > mobile/android/local.properties
-          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> mobile/android/local.properties
+      - run: echo "sdk.dir=$ANDROID_SDK_ROOT" > mobile/android/local.properties
 
-      - name: Install dependencies
-        run: cd mobile && npm install --legacy-peer-deps
+      - run: cd mobile && npm install
 
       - run: chmod +x mobile/android/gradlew
 
