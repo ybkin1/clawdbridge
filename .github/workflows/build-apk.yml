@@ -46,21 +46,22 @@ jobs:
           ./gradlew assembleRelease --no-daemon --stacktrace
         continue-on-error: true
 
-      - name: Find APK files
+      - name: Find and copy APK
         run: |
           echo "Searching for APK files..."
-          find mobile/android -name "*.apk" -type f 2>/dev/null | head -20
+          find mobile/android -name "*.apk" -type f 2>/dev/null
           echo "---"
-          ls -la mobile/android/app/build/outputs/apk/release/ 2>/dev/null || echo "Release directory not found"
+          # Create a known location for the APK
+          mkdir -p ./output
+          find mobile/android -name "*.apk" -type f -exec cp {} ./output/ \; 2>/dev/null
+          echo "Files in output directory:"
+          ls -la ./output/ 2>/dev/null || echo "No output directory"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: clawdbridge-apk
-          path: |
-            mobile/android/app/build/outputs/apk/release/*.apk
-            mobile/android/app/build/outputs/apk/debug/*.apk
-            mobile/android/**/*.apk
+          path: ./output/*.apk
           retention-days: 90
           if-no-files-found: warn
 
@@ -71,18 +72,3 @@ jobs:
           name: build-logs
           path: mobile/android/build.log
           if-no-files-found: ignore
-
-      - name: Create Release
-        if: success()
-        uses: softprops/action-gh-release@v1
-        with:
-          files: mobile/android/app/build/outputs/apk/release/*.apk
-          tag_name: v0.1.0-${{ github.run_number }}
-          name: ClawdBridge APK v0.1.0-${{ github.run_number }}
-          body: |
-            Automated build of ClawdBridge APK
-            Build Date: ${{ github.event.head_commit.timestamp }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
