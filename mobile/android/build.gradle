@@ -14,6 +14,7 @@ buildscript {
         google()
         mavenCentral()
         maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
+        maven { url 'https://maven.pkg.jetbrains.space/public/p/compose/dev' }
     }
     dependencies {
         classpath('com.android.tools.build:gradle')
@@ -38,5 +39,7 @@ allprojects {
         google()
         mavenCentral()
         maven { url 'https://www.jitpack.io' }
+        maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
+        maven { url 'https://maven.pkg.jetbrains.space/public/p/compose/dev' }
     }
 }
