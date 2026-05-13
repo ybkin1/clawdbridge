@@ -1,0 +1,78 @@
+receipt_id: receipt-rb-20260513-001
+review_bundle: rb-20260513-001
+target: "规范架构 v2.0 完整性评审"
+
+verdict:
+  overall: conditional_pass
+  rationale: "All 3 reviewers agree structure is sound and tests pass, but P0/H gaps prevent clean Pass."
+
+reviewers:
+  - id: code-reviewer
+    verdict: conditional_pass
+    critical: 2
+    high: 2
+    medium: 6
+    low: 4
+    informational: 4
+  - id: architect-reviewer
+    verdict: conditional_pass
+    critical: 0
+    high: 2
+    medium: 3
+    low: 3
+    informational: 5
+  - id: contract-reviewer
+    verdict: conditional_pass
+    critical: 0
+    high: 1
+    medium: 2
+    low: 3
+    informational: 3
+
+aggregate:
+  critical: 2
+  high: 5
+  medium: 11
+  low: 10
+  informational: 12
+
+required_fixes:
+  - id: P0-3
+    description: "Wire missing MCP tools in index.js"
+    severity: critical
+    files: ["index.js"]
+  - id: P0-1
+    description: "Fix atomic write rollback in requestPhaseTransition"
+    severity: critical
+    files: ["enforcer.js"]
+  - id: H-3
+    description: "Align mechanical-conditions.yaml source refs with spec headings"
+    severity: high
+    files: ["mechanical-conditions.yaml", "task-tracking-workflow-spec.md"]
+  - id: H-1
+    description: "Remove hardcoded atomicity constants from tools.js"
+    severity: high
+    files: ["tools.js", "atomicity-rules.yaml"]
+  - id: M-1
+    description: "Add missing SubagentStart/SubagentStop hook scripts"
+    severity: medium
+    files: ["hooks/", "settings.json"]
+  - id: M-2
+    description: "Support .js checker execution in runBashChecker"
+    severity: medium
+    files: ["enforcer.js", "checkers/index.yaml"]
+  - id: M-3
+    description: "Consume unknown_check_type_policy in evaluateCondition"
+    severity: medium
+    files: ["enforcer.js", "mcp-capabilities.yaml"]
+  - id: H-2
+    description: "Resolve empty schemas/ directory"
+    severity: high
+    files: ["config/schemas/", "enforcer.js", "README.md"]
+
+re_review_triggered: false
+max_re_review_rounds: 3
+current_round: 1
+
+signed_by: orchestrator-prime
+timestamp: "2026-05-13T07:10:00Z"

@@ -62,7 +62,14 @@ function loadConfig(configName) {
 
 // Directory-level batch loading: 1 readdir + N stats instead of N separate calls (P-001 fix)
 let allConfigsCacheTime = 0;
-const ALL_CONFIG_NAMES = ["mechanical-conditions", "phase-state-machine", "write-permissions", "mcp-capabilities", "atomicity-rules"];
+const ALL_CONFIG_NAMES = [
+  "mechanical-conditions",
+  "phase-state-machine",
+  "write-permissions",
+  "mcp-capabilities",
+  "atomicity-rules",
+  "agent-orchestration-rules",
+];
 
 function loadAllConfigs() {
   try {
@@ -109,17 +116,24 @@ export function estimateTokens(text) {
 const SUPPORTED_CONFIG_VERSION_MIN = 1;
 const SUPPORTED_CONFIG_VERSION_MAX = 1;
 
-const KNOWN_CHECK_TYPES = new Set([
-  "field_equals",
-  "field_not_equals",
-  "field_empty_or_null",
-  "gate_results_all_passed",
-  "file_exists_and_size_gt_0",
-  "timestamp_freshness",
-  "checker_result_status",
-  "mandatory_checkers_all_passed_or_excepted",
-  "evidence_lock_exists",
-]);
+function getKnownCheckTypes() {
+  const mc = loadConfig("mechanical-conditions");
+  if (mc?.check_types && Array.isArray(mc.check_types) && mc.check_types.length > 0) {
+    return new Set(mc.check_types);
+  }
+  // Fallback hard-coded set for backward compatibility during transition
+  return new Set([
+    "field_equals",
+    "field_not_equals",
+    "field_empty_or_null",
+    "gate_results_all_passed",
+    "file_exists_and_size_gt_0",
+    "timestamp_freshness",
+    "checker_result_status",
+    "mandatory_checkers_all_passed_or_excepted",
+    "evidence_lock_exists",
+  ]);
+}
 
 function validateSchemaFields(name, cfg, schema) {
   const errors = [];
@@ -168,12 +182,13 @@ function validateConfigs() {
   }
 
   const mc = loadConfig("mechanical-conditions");
+  const knownTypes = getKnownCheckTypes();
   if (mc?.conditions) {
     for (const cond of mc.conditions) {
-      if (cond.check_type && !KNOWN_CHECK_TYPES.has(cond.check_type)) {
+      if (cond.check_type && !knownTypes.has(cond.check_type)) {
         errors.push(
           `mechanical-conditions.yaml contains unknown check_type '${cond.check_type}' in condition '${cond.id}'. ` +
-            `Known types: ${Array.from(KNOWN_CHECK_TYPES).join(", ")}. `
+            `Known types: ${Array.from(knownTypes).join(", ")}. `
         );
       }
     }
@@ -274,10 +289,26 @@ async function evaluateCondition(cond, state, taskDir, checkerIndex = null) {
       const prefix = cond.field_prefix || "gate_";
       const gates = Object.entries(state).filter(([k]) => k.startsWith(prefix));
       const failed = gates.filter(([_, v]) => v?.status !== "passed");
-      const passed = failed.length === 0;
+
+      // Verify expected gates from phase-state-machine config exist in state
+      const psmConfig = loadConfig("phase-state-machine");
+      const phaseDef = psmConfig?.phases?.find((p) => p.id === state?.phase);
+      const expectedGates = phaseDef?.gates || [];
+      const missingGates = [];
+      for (const g of expectedGates) {
+        const gateKey = `${prefix}${g}`;
+        if (!state.hasOwnProperty(gateKey)) {
+          missingGates.push(gateKey);
+        }
+      }
+
+      const passed = failed.length === 0 && missingGates.length === 0;
+      const failedMsg = failed.length > 0 ? `Gates not passed: ${failed.map(([k]) => k).join(", ")}` : "";
+      const missingMsg = missingGates.length > 0 ? `Missing gate results: ${missingGates.join(", ")}` : "";
+      const gapMsg = [failedMsg, missingMsg].filter(Boolean).join("; ");
       return {
         passed,
-        gap: passed ? null : `Condition '${cond.id}': Gates not passed: ${failed.map(([k]) => k).join(", ")}`,
+        gap: passed ? null : `Condition '${cond.id}': ${gapMsg}`,
       };
     }
 
@@ -399,29 +430,25 @@ export async function checkPhaseReadiness(args = {}) {
   loadAllConfigs(); // Batch preload to reduce per-file stat overhead (P-001 fix)
   const taskDir = resolveTaskDir(args.taskDir);
   if (!taskDir) {
-    return { ready: false, gaps: ["No active task found."] };
+    return { ready: false, gaps: ["No active task found."], warnings: [] };
   }
 
   const taskId = path.basename(taskDir);
   const stateFile = path.join(taskDir, "00-task-state.yaml");
   const state = loadYaml(stateFile);
   if (!state) {
-    return { ready: false, gaps: ["00-task-state.yaml missing or unreadable."] };
+    return { ready: false, gaps: ["00-task-state.yaml missing or unreadable."], warnings: [] };
   }
 
   const phase = state.phase || "unknown";
   const phaseStatus = state.phase_status || "unknown";
   const gaps = [];
+  const warnings = [];
 
-  // Fast-path: current phase must be passed
+  // Phase status check: always report as hard gap if not passed, but still evaluate all conditions
+  // so that warnings (including soft blockers) are surfaced even when phase is not passed
   if (phaseStatus !== "passed") {
-    return {
-      taskId,
-      phase,
-      phaseStatus,
-      ready: false,
-      gaps: [`Phase status is '${phaseStatus}', not passed.`],
-    };
+    gaps.push(`Phase status is '${phaseStatus}', not passed.`);
   }
 
   // Pre-index checker results to eliminate repeated readdirSync (P-002 fix)
@@ -444,8 +471,12 @@ export async function checkPhaseReadiness(args = {}) {
   if (conditions.length > 0) {
     for (const cond of conditions) {
       const result = await evaluateCondition(cond, state, taskDir, checkerIndex);
-      if (!result.passed && cond.blocker_level === "hard") {
-        gaps.push(result.gap);
+      if (!result.passed) {
+        if (cond.blocker_level === "hard") {
+          gaps.push(result.gap);
+        } else {
+          warnings.push(result.gap);
+        }
       }
     }
   }
@@ -458,6 +489,7 @@ export async function checkPhaseReadiness(args = {}) {
     phaseStatus,
     ready: gaps.length === 0,
     gaps,
+    warnings,
     auditorRequired,
     timestamp: new Date().toISOString(),
   };
@@ -797,8 +829,28 @@ export async function validateWritePermission(args = {}) {
 
   const phaseStatus = state.phase_status || "unknown";
 
-  // Load sensitivity patterns from config
+  // Load write-permissions config
   const wpConfig = loadConfig("write-permissions");
+
+  // Role-based permission check (P1-1 fix)
+  const role = args.role || "";
+  const roleDef = wpConfig?.roles?.find((r) => r.id === role);
+  if (roleDef && roleDef.blocks) {
+    for (const block of roleDef.blocks) {
+      const regexStr = block.pattern
+        .replace(/\./g, "\\.")
+        .replace(/\*\*/g, ".*")
+        .replace(/\*/g, "[^/]*");
+      const blockRe = new RegExp(regexStr);
+      if (blockRe.test(normPath)) {
+        return {
+          allowed: false,
+          reason: `BLOCKED: Role '${role}' cannot write ${normPath} per write-permissions.yaml.`,
+        };
+      }
+    }
+  }
+
   const patterns = wpConfig?.sensitive_patterns || [];
   const sensitivity = isSensitiveFile(normPath, patterns);
 
@@ -848,6 +900,51 @@ export async function validateWritePermission(args = {}) {
   }
 
   return { allowed: true, reason: "All mechanical conditions satisfied; sensitive operation allowed." };
+}
+
+// ---------------------------------------------------------------------------
+// Bash redirection detection (P0-2 fix)
+// Extracts file targets from Bash redirects (>, >>, 2>, | tee, etc.) and
+// validates each target via validateWritePermission.
+// ---------------------------------------------------------------------------
+
+function extractBashRedirectionTargets(command) {
+  if (!command || typeof command !== "string") return [];
+  const targets = [];
+  // Match >file, >> file, 2>file, &>file, etc.
+  const redirectRe = /\d*\s*[>][&>]?\s*(\S+)/g;
+  let m;
+  while ((m = redirectRe.exec(command)) !== null) {
+    targets.push(m[1]);
+  }
+  // Match | tee file, | tee -a file
+  const teeRe = /\|\s*tee\s+(?:-[a-z]+\s+)?(\S+)/g;
+  while ((m = teeRe.exec(command)) !== null) {
+    targets.push(m[1]);
+  }
+  // Filter out safe prefixes like /dev/null, -
+  return targets.filter((t) => !t.startsWith("/dev/") && t !== "-");
+}
+
+export async function validateBashCommand(args = {}) {
+  const { command, taskDir, role } = args;
+  const targets = extractBashRedirectionTargets(command);
+  if (targets.length === 0) {
+    return { allowed: true, reason: "No file-writing redirection detected." };
+  }
+  for (const target of targets) {
+    const resolvedTarget = path.isAbsolute(target) ? target : path.join(taskDir || process.cwd(), target);
+    const result = await validateWritePermission({
+      filePath: resolvedTarget,
+      operation: "Write",
+      role,
+      taskDir,
+    });
+    if (!result.allowed) {
+      return { ...result, reason: `Bash redirect target blocked: ${target} — ${result.reason}` };
+    }
+  }
+  return { allowed: true, reason: "All redirection targets allowed." };
 }
 
 // ---------------------------------------------------------------------------
@@ -1119,19 +1216,10 @@ function loadRegistryYaml() {
   const filePath = path.join(PROJECT_ROOT, ".claude", "contracts", "registry.yaml");
   if (!fs.existsSync(filePath)) return null;
   const content = fs.readFileSync(filePath, "utf8");
-  const match = content.match(/```yaml\s*\n([\s\S]*?)\n```/);
-  if (match) {
-    try {
-      return yaml.load(match[1]);
-    } catch (err) {
-      console.error(`[loadRegistryYaml] Failed to parse embedded YAML: ${err.message}`);
-      return null;
-    }
-  }
-  // Fallback: try parsing whole file as YAML
   try {
     return yaml.load(content);
-  } catch {
+  } catch (err) {
+    console.error(`[loadRegistryYaml] Failed to parse registry.yaml: ${err.message}`);
     return null;
   }
 }
@@ -1297,38 +1385,121 @@ function loadAgentOrchestrationRules() {
   return loadConfig("agent-orchestration-rules") || {};
 }
 
-function validatePacketAtomicity(packet, rules) {
+function validatePacketAtomicity(packet) {
+  const atomicityConfig = loadConfig("atomicity-rules");
+  const rules = atomicityConfig?.rules || [];
   const violations = [];
-  const r = rules.rules || {};
 
-  // Description length ≤ 15 words
-  const desc = packet.description || packet.objective || "";
-  const wordCount = desc.split(/\s+/).filter((w) => w.length > 0).length;
-  if (r.max_description_words && wordCount > r.max_description_words) {
-    violations.push(`description exceeds ${r.max_description_words} words (${wordCount})`);
-  }
+  for (const rule of rules) {
+    const {
+      check_type,
+      target_field,
+      max,
+      max_lines: ruleMaxLines,
+      max_tokens,
+      pattern,
+      reference_fields,
+      exempt_if,
+      must_contain_verbs,
+      allow_justification_field,
+    } = rule;
+    const value = packet[target_field];
 
-  // Input params ≤ 5
-  const params = packet.input_params || [];
-  if (r.max_input_params && params.length > r.max_input_params) {
-    violations.push(`input_params exceed ${r.max_input_params} (${params.length})`);
-  }
+    // Simple exempt_if handling: "field == value" or "field != value"
+    if (exempt_if) {
+      const exemptMatch = String(exempt_if).match(/^(\w+)\s*([=!]+)\s*(.+)$/);
+      if (exemptMatch) {
+        const [, exField, op, exVal] = exemptMatch;
+        const actual = packet[exField];
+        const expected = exVal.trim();
+        if (op === "!=" && String(actual) !== expected) continue;
+        if (op === "==" && String(actual) === expected) continue;
+      }
+    }
 
-  // Max lines ≤ 50
-  const maxLines = packet.max_lines || 0;
-  if (r.max_lines && maxLines > r.max_lines) {
-    violations.push(`max_lines exceed ${r.max_lines} (${maxLines})`);
-  }
+    // Allow justification override
+    if (allow_justification_field && packet[allow_justification_field]) {
+      continue;
+    }
 
-  // Must have target_file for implementation packets
-  if (r.require_target_file && !packet.target_file) {
-    violations.push("missing target_file");
-  }
-
-  // Must have acceptance criteria
-  const acceptance = packet.acceptance_criteria || packet.acceptance || "";
-  if (r.require_acceptance && (!acceptance || acceptance.length === 0)) {
-    violations.push("missing acceptance_criteria");
+    switch (check_type) {
+      case "word_count": {
+        const words = String(value || "").split(/\s+/).filter((w) => w.length > 0).length;
+        if (max && words > max) {
+          violations.push(`${rule.id}: ${target_field} exceeds ${max} words (${words})`);
+        }
+        break;
+      }
+      case "array_length": {
+        const arr = Array.isArray(value) ? value : [];
+        if (max && arr.length > max) {
+          violations.push(`${rule.id}: ${target_field} exceeds ${max} items (${arr.length})`);
+        }
+        break;
+      }
+      case "file_lines": {
+        // P1-4 fix: read actual files from code_refs and count lines
+        const codeRefs = Array.isArray(value) ? value : value ? [value] : [];
+        for (const ref of codeRefs) {
+          if (!ref) continue;
+          try {
+            const filePath = path.resolve(ref);
+            if (fs.existsSync(filePath)) {
+              const content = fs.readFileSync(filePath, "utf8");
+              const lines = content.split(/\r?\n/).length;
+              if (ruleMaxLines && lines > ruleMaxLines) {
+                violations.push(`${rule.id}: ${ref} has ${lines} lines, exceeds ${ruleMaxLines}`);
+              }
+            }
+          } catch {
+            // ignore file read errors
+          }
+        }
+        break;
+      }
+      case "file_count": {
+        const files = Array.isArray(value) ? value : value ? [value] : [];
+        if (max && files.length > max) {
+          violations.push(`${rule.id}: ${target_field} exceeds ${max} files (${files.length})`);
+        }
+        break;
+      }
+      case "estimated_tokens": {
+        const fields = [value];
+        if (reference_fields && Array.isArray(reference_fields)) {
+          for (const rf of reference_fields) fields.push(packet[rf]);
+        }
+        const text = fields.filter(Boolean).join(" ");
+        const tokens = estimateTokens(text);
+        if (max_tokens && tokens > max_tokens) {
+          violations.push(`${rule.id}: estimated tokens exceed ${max_tokens} (${tokens})`);
+        }
+        break;
+      }
+      case "regex_match": {
+        if (pattern && value && !new RegExp(pattern).test(String(value))) {
+          violations.push(`${rule.id}: ${target_field} does not match pattern ${pattern}`);
+        }
+        break;
+      }
+      case "single_sentence": {
+        const text = String(value || "");
+        const sentences = text.split(/[.!?。！？]/).filter((s) => s.trim().length > 0);
+        if (sentences.length > 1) {
+          violations.push(`${rule.id}: ${target_field} must be a single sentence`);
+        } else if (must_contain_verbs && Array.isArray(must_contain_verbs)) {
+          // P1-5 fix: check must_contain_verbs
+          const hasVerb = must_contain_verbs.some((verb) => text.includes(verb));
+          if (!hasVerb) {
+            violations.push(`${rule.id}: ${target_field} must contain one of [${must_contain_verbs.join(", ")}]`);
+          }
+        }
+        break;
+      }
+      default:
+        // Unknown check_type in atomicity-rules: skip silently to avoid false blocks
+        break;
+    }
   }
 
   return violations;
@@ -1363,21 +1534,16 @@ export async function agentOrchestrator(args = {}) {
     };
   }
 
-  // Load agent orchestration rules
-  const rules = loadAgentOrchestrationRules();
   const allViolations = [];
   const agentIds = [];
+  const packetAgentMap = new Map(); // packet_id -> worker_agent_id
 
   for (let i = 0; i < packets.length; i++) {
     const pkt = packets[i];
-    const v = validatePacketAtomicity(pkt, rules);
+    const v = validatePacketAtomicity(pkt);
     if (v.length > 0) {
       allViolations.push({ packet_index: i, packet_id: pkt.packet_id || i, violations: v });
     }
-
-    // Pre-assign agent IDs based on context
-    const role = packets.length === 1 ? "worker" : "sub-orchestrator";
-    agentIds.push(generateAgentId(role, pkt.packet_id || `pkt-${i}`));
   }
 
   if (allViolations.length > 0) {
@@ -1387,6 +1553,58 @@ export async function agentOrchestrator(args = {}) {
       violations: allViolations,
       agent_ids: [],
     };
+  }
+
+  // Role assignment based on orchestration_decision (P1-3 fix)
+  let executionPlanPhase = "";
+  switch (decision) {
+    case "single_thread_exception": {
+      executionPlanPhase = "main_thread_execution";
+      // No sub-agents spawned; main thread handles execution
+      break;
+    }
+    case "single_packet_direct": {
+      executionPlanPhase = "spawn_worker";
+      for (const pkt of packets) {
+        const wid = generateAgentId("worker", pkt.packet_id || `pkt-${agentIds.length}`);
+        agentIds.push(wid);
+        packetAgentMap.set(pkt.packet_id || `pkt-${agentIds.length - 1}`, wid);
+      }
+      break;
+    }
+    case "multi_packet_parallel": {
+      if (packets.length <= 3) {
+        // Small parallel: all workers, no sub-orchestrator needed
+        executionPlanPhase = "spawn_workers";
+        for (const pkt of packets) {
+          const wid = generateAgentId("worker", pkt.packet_id || `pkt-${agentIds.length}`);
+          agentIds.push(wid);
+          packetAgentMap.set(pkt.packet_id || `pkt-${agentIds.length - 1}`, wid);
+        }
+      } else {
+        // Large parallel: group packets under sub-orchestrators
+        executionPlanPhase = "spawn_sub_orchestrator";
+        const groupSize = 3;
+        let groupIndex = 0;
+        for (let i = 0; i < packets.length; i += groupSize) {
+          const group = packets.slice(i, i + groupSize);
+          const subId = generateAgentId("sub-orchestrator", `group-${groupIndex}`);
+          agentIds.push(subId);
+          for (const pkt of group) {
+            const wid = generateAgentId("worker", pkt.packet_id || `pkt-${agentIds.length}`);
+            agentIds.push(wid);
+            packetAgentMap.set(pkt.packet_id || `pkt-${agentIds.length - 1}`, wid);
+          }
+          groupIndex++;
+        }
+      }
+      break;
+    }
+    default:
+      executionPlanPhase = "spawn_worker";
+      for (const pkt of packets) {
+        agentIds.push(generateAgentId("worker", pkt.packet_id || `pkt-${agentIds.length}`));
+      }
   }
 
   // Write orchestrator plan
@@ -1401,9 +1619,9 @@ export async function agentOrchestrator(args = {}) {
     orchestration_decision: decision,
     created_at: new Date().toISOString(),
     agent_ids: agentIds,
-    packets: packets.map((p, i) => ({
+    packets: packets.map((p) => ({
       ...p,
-      assigned_agent_id: agentIds[i],
+      assigned_agent_id: packetAgentMap.get(p.packet_id) || null,
     })),
     status: "approved",
   };
@@ -1413,7 +1631,7 @@ export async function agentOrchestrator(args = {}) {
     allowed: true,
     agent_ids: agentIds,
     execution_plan: {
-      phase: packets.length === 1 ? "spawn_worker" : "spawn_sub_orchestrator",
+      phase: executionPlanPhase,
       packet_count: packets.length,
       decision,
     },

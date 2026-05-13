@@ -1,0 +1,16 @@
+review_id: rb-20260513-001
+target: "规范架构 v2.0 完整性评审"
+scope:
+  - "L1 Spec: claude-code-norms/ 契约完整性、registry.yaml、checkers/index.yaml"
+  - "L2 Config: config/*.yaml 配置一致性"
+  - "L3 MCP: constraint-enforcer 配置驱动架构"
+  - "L7 Hook: hooks/ 拦截层完整性"
+  - "L8 Checker: 19 个 checker 覆盖度"
+reviewers:
+  - id: code-reviewer
+    focus: "MCP 代码质量、test 覆盖率、Hook 实现"
+  - id: architect-reviewer
+    focus: "八层架构完整性、层间边界、部署指南"
+  - id: contract-reviewer
+    focus: "契约与配置同步、registry 一致性、checker 映射"
+deliverable: "review-bundles/rb-20260513-001/reviews/*.md + receipt-*.yaml"

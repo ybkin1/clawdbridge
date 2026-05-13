@@ -148,8 +148,8 @@ checkers:
     description: "Design §14 STEP 与 Dev Plan 包的双向引用覆盖率 ≥95%"
     output_schema: "checker-result-v1"
     structured_output_required: true
-    implementation_status: placeholder
-    fallback_manual_evidence: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
     manual_evidence_template:
       method: "人工检查 Design §14 每个 STEP 是否在 Dev Plan 中有对应包"
       evidence_format: "双向引用矩阵 YAML"
@@ -165,8 +165,8 @@ checkers:
     description: "每个包有效代码 ≤50 行或声明 oversized_justified"
     output_schema: "checker-result-v1"
     structured_output_required: true
-    implementation_status: placeholder
-    fallback_manual_evidence: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
     manual_evidence_template:
       method: "人工统计每个包的有效代码行数，检查 oversized 声明完整性"
       evidence_format: "包级行数统计表"
@@ -182,8 +182,8 @@ checkers:
     description: "每个代码文件头部有 @packet <id> 注释"
     output_schema: "checker-result-v1"
     structured_output_required: true
-    implementation_status: placeholder
-    fallback_manual_evidence: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
     manual_evidence_template:
       method: "人工检查每个新增/修改代码文件头部是否有 @packet 注释"
       evidence_format: "文件清单 + @packet 值"
@@ -199,8 +199,8 @@ checkers:
     description: "git diff 中新增代码的每个 export 在 Dev Plan 中有对应包"
     output_schema: "checker-result-v1"
     structured_output_required: true
-    implementation_status: placeholder
-    fallback_manual_evidence: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
     manual_evidence_template:
       method: "人工比对 git diff 中新增公开符号与 Dev Plan packet manifest"
       evidence_format: "符号来源对照表"
@@ -216,8 +216,8 @@ checkers:
     description: "代码中的 try/catch/throw 在 Design §14 异常传播链中有定义"
     output_schema: "checker-result-v1"
     structured_output_required: true
-    implementation_status: placeholder
-    fallback_manual_evidence: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
     manual_evidence_template:
       method: "按 §5.5 的 7 步执行步骤人工检查异常路径覆盖"
       evidence_format: "异常路径覆盖报告"
@@ -233,8 +233,8 @@ checkers:
     description: "代码中的状态赋值在 Design 状态变更追踪中有定义"
     output_schema: "checker-result-v1"
     structured_output_required: true
-    implementation_status: placeholder
-    fallback_manual_evidence: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
     manual_evidence_template:
       method: "按 §5.6 的 7 步执行步骤人工检查状态转换覆盖"
       evidence_format: "状态转换覆盖报告"
@@ -250,8 +250,8 @@ checkers:
     description: "拼装后的模块间接口类型/签名一致"
     output_schema: "checker-result-v1"
     structured_output_required: true
-    implementation_status: placeholder
-    fallback_manual_evidence: true
+    implementation_status: implemented
+    fallback_manual_evidence: false
     manual_evidence_template:
       method: "运行类型检查器（tsc/mypy/go build）并人工核对跨模块接口"
       evidence_format: "类型检查报告 + 关键函数签名比对表"

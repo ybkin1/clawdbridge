@@ -54,7 +54,7 @@ rules:
     name: "L4 packet name precise to function/method"
     check_type: "regex_match"
     target_field: "name"
-    pattern: '^[A-Z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]+$'
+    pattern: '^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$'
     exempt_if: "packet_level != l4"
     blocker_level: hard
     rationale: "L4 packets must name exact function/method, not vague module"

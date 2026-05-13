@@ -17,7 +17,19 @@
 #   evidence_lock_exists  — checkers/evidence-lock-<phase>.yaml 存在
 
 version: 1
-updated_at: "2026-05-12"
+updated_at: "2026-05-13"
+
+# 注册所有支持的 check_type；新增类型只需在此列表声明，无需修改 enforcer.js
+check_types:
+  - field_equals
+  - field_not_equals
+  - field_empty_or_null
+  - gate_results_all_passed
+  - file_exists_and_size_gt_0
+  - timestamp_freshness
+  - checker_result_status
+  - mandatory_checkers_all_passed_or_excepted
+  - evidence_lock_exists
 
 conditions:
   - id: phase_status_passed

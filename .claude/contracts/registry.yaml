@@ -1,17 +1,4 @@
-# 契约注册表（Contract Registry）
-
-> 追踪每个契约的状态和生效范围，驱动 intent-indexed activation。
-
-### effective_scope 语法
-
-- 列表形式 `[a, b]` 表示 AND 关系（必须同时满足列表中的所有条件）
-- `key=value` 表示精确匹配该字段值
-- `key=A|B` 表示匹配 key 等于 A 或 B（单个字段内的 OR 关系）
-- `all` 表示无条件全量生效
-- 裸字符串（如 `all tasks`、`all phases`）为领域限定符，表示匹配该领域下的所有值
-- 比较运算符（`>=`、`<=`）仅用于数值字段（如 `context_budget`）
-
-```yaml
+# Converted from Markdown-embedded YAML to pure YAML
 version: 2
 updated_at: "2026-05-11"
 
@@ -393,4 +380,3 @@ contracts:
       - "exception-path-coverage-check"
       - "state-transition-coverage-check"
       - "assembly-interface-alignment-check"
-```

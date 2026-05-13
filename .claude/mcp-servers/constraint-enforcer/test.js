@@ -10,6 +10,7 @@ import {
   checkPhaseReadiness,
   runMandatoryCheckers,
   validateWritePermission,
+  validateBashCommand,
   generateEvidenceLock,
   requestPhaseTransition,
   getCheckerCatalog,
@@ -167,10 +168,12 @@ async function testRequestPhaseTransition() {
     fs.writeFileSync(fp, yaml.dump(doc));
   }
 
-  // Update state updated_at to be newer than artifact mtime
+  // Update state updated_at to be newer than artifact mtime, and seed gate results
   const stateFile = path.join(TEST_TASK_DIR, "00-task-state.yaml");
   const state = yaml.load(fs.readFileSync(stateFile, "utf8"));
   state.updated_at = new Date().toISOString();
+  state.gate_professional = { status: "passed" };
+  state.gate_contract = { status: "passed" };
   fs.writeFileSync(stateFile, yaml.dump(state));
 
   // After evidence lock + fixed checker, readiness should pass
@@ -193,6 +196,13 @@ async function testFailedCheckerBlocksTransition() {
   console.log("\n--- Test: failed checker blocks transition ---");
   setup();
 
+  // Seed gate results so readiness fails only due to checker, not missing gates
+  const stateFile = path.join(TEST_TASK_DIR, "00-task-state.yaml");
+  const state = yaml.load(fs.readFileSync(stateFile, "utf8"));
+  state.gate_professional = { status: "passed" };
+  state.gate_contract = { status: "passed" };
+  fs.writeFileSync(stateFile, yaml.dump(state));
+
   // Run checkers to generate results
   await runMandatoryCheckers({ taskDir: TEST_TASK_DIR });
 
@@ -210,9 +220,11 @@ async function testAuditorVerdictBlocksTransition() {
   console.log("\n--- Test: auditor verdict blocks transition ---");
   setup();
 
-  // Set auditor_verdict to failed
+  // Seed gate results so readiness is not blocked by missing gates
   const stateFile = path.join(TEST_TASK_DIR, "00-task-state.yaml");
   const state = yaml.load(fs.readFileSync(stateFile, "utf8"));
+  state.gate_professional = { status: "passed" };
+  state.gate_contract = { status: "passed" };
   state.auditor_verdict = "mechanical_gap";
   fs.writeFileSync(stateFile, yaml.dump(state));
 
@@ -311,7 +323,7 @@ async function testAgentOrchestratorValidManifest() {
         input_params: ["secret_key", "expiry_hours"],
         max_lines: 50,
         target_file: "src/auth/login.ts",
-        acceptance_criteria: ["Unit tests pass"],
+        acceptance_criteria: ["→ Returns JWT token on valid credentials"],
       },
       {
         packet_id: "pkt-auth-middleware",
@@ -319,7 +331,7 @@ async function testAgentOrchestratorValidManifest() {
         input_params: ["login_handler_ref"],
         max_lines: 50,
         target_file: "src/auth/middleware.ts",
-        acceptance_criteria: ["Type check passes"],
+        acceptance_criteria: ["→ Throws 401 on invalid token"],
       },
     ],
   };
@@ -328,7 +340,7 @@ async function testAgentOrchestratorValidManifest() {
   console.log(JSON.stringify(result, null, 2));
   assert(result.allowed === true, "Valid manifest should be allowed");
   assert(result.agent_ids.length === 2, "Should assign 2 agent IDs");
-  assert(result.execution_plan.phase === "spawn_sub_orchestrator", "Multi-packet should spawn sub-orchestrator");
+  assert(result.execution_plan.phase === "spawn_workers", "≤3 packets should spawn workers directly");
   assert(fs.existsSync(result.plan_file), "Plan file should be written");
 }
 
@@ -427,6 +439,296 @@ async function testCheckpointSync() {
   assert(load.snapshot.task_state.task_id === "tk-test-001", "Task state should be captured");
 }
 
+// ---------------------------------------------------------------------------
+// Round 2 fix test coverage (P0/P1)
+// ---------------------------------------------------------------------------
+
+async function testSoftBlockerWarnings() {
+  console.log("\n--- Test: soft blocker warnings (P0-4) ---");
+  setup();
+
+  // Set closeout_allowed = true to trigger the soft blocker closeout_not_already_allowed
+  const stateFile = path.join(TEST_TASK_DIR, "00-task-state.yaml");
+  const state = yaml.load(fs.readFileSync(stateFile, "utf8"));
+  state.closeout_allowed = true;
+  fs.writeFileSync(stateFile, yaml.dump(state));
+
+  const result = await checkPhaseReadiness({ taskDir: TEST_TASK_DIR });
+  console.log(JSON.stringify(result, null, 2));
+  assert(
+    result.warnings.some((w) => w && w.includes("closeout_not_already_allowed")),
+    "Should surface soft blocker in warnings"
+  );
+  // Note: ready is false here due to other hard blockers (gates, checkers, evidence lock),
+  // not because of the soft blocker. The soft blocker alone would allow ready=true.
+}
+
+async function testRoleBasedWritePermission() {
+  console.log("\n--- Test: role-based write permission (P1-1) ---");
+  setup();
+
+  // Worker role should be blocked from writing state file
+  const r1 = await validateWritePermission({
+    taskDir: TEST_TASK_DIR,
+    filePath: path.join(TEST_TASK_DIR, "00-task-state.yaml"),
+    operation: "Write",
+    role: "worker",
+    newContent: yaml.dump({ phase_status: "passed" }),
+  });
+  assert(r1.allowed === false, "Worker should be blocked from writing state file");
+  assert(r1.reason.includes("worker"), "Reason should mention worker role");
+
+  // Orchestrator role should not be blocked by role (but may be blocked by readiness)
+  const r2 = await validateWritePermission({
+    taskDir: TEST_TASK_DIR,
+    filePath: path.join(TEST_TASK_DIR, "00-task-state.yaml"),
+    operation: "Write",
+    role: "orchestrator",
+    newContent: yaml.dump({ phase_status: "passed" }),
+  });
+  assert(!r2.reason.includes("orchestrator"), "Orchestrator should not be blocked by role policy");
+}
+
+async function testMissingGatesDetection() {
+  console.log("\n--- Test: missing gates detection (P1-2) ---");
+  setup();
+
+  // Build phase has gates [professional, contract]; omit them from state
+  const stateFile = path.join(TEST_TASK_DIR, "00-task-state.yaml");
+  const state = yaml.load(fs.readFileSync(stateFile, "utf8"));
+  state.phase = "build";
+  delete state.gate_professional;
+  delete state.gate_contract;
+  fs.writeFileSync(stateFile, yaml.dump(state));
+
+  const result = await checkPhaseReadiness({ taskDir: TEST_TASK_DIR });
+  console.log(JSON.stringify(result, null, 2));
+  assert(
+    result.gaps.some((g) => g && g.includes("Missing gate results")),
+    "Should detect missing expected gates"
+  );
+  assert(
+    result.gaps.some((g) => g && g.includes("gate_professional")),
+    "Gap should mention gate_professional"
+  );
+}
+
+async function testFileLinesAtomicity() {
+  console.log("\n--- Test: file_lines atomicity reads actual files (P1-4) ---");
+  setup();
+
+  // Create a 60-line file (>50 limit)
+  const bigFile = path.join(TEST_TASK_DIR, "big-file.ts");
+  fs.writeFileSync(bigFile, Array(60).fill("line").join("\n"));
+
+  const manifest = {
+    manifest_id: "mf-lines",
+    orchestration_decision: "single_packet_direct",
+    packets: [
+      {
+        packet_id: "pkt-big",
+        objective: "Implement big module",
+        code_refs: [bigFile],
+        acceptance_criteria: ["Compiles"],
+      },
+    ],
+  };
+
+  const result = await agentOrchestrator({ taskDir: TEST_TASK_DIR, manifest });
+  console.log(JSON.stringify(result, null, 2));
+  assert(result.allowed === false, "Oversized file should be blocked");
+  assert(
+    result.violations.some((v) => v.violations.some((vv) => vv.includes("code_line_limit"))),
+    "Should report code_line_limit violation"
+  );
+}
+
+async function testMustContainVerbs() {
+  console.log("\n--- Test: single_sentence must_contain_verbs (P1-5) ---");
+  setup();
+
+  const manifest = {
+    manifest_id: "mf-verbs",
+    orchestration_decision: "single_packet_direct",
+    packets: [
+      {
+        packet_id: "pkt-verb",
+        objective: "Implement handler",
+        acceptance_criteria: "This is good.",
+      },
+    ],
+  };
+
+  const result = await agentOrchestrator({ taskDir: TEST_TASK_DIR, manifest });
+  console.log(JSON.stringify(result, null, 2));
+  assert(result.allowed === false, "Missing verb should be blocked");
+  assert(
+    result.violations.some((v) => v.violations.some((vv) => vv.includes("acceptance_criteria_single_sentence"))),
+    "Should report acceptance_criteria_single_sentence violation"
+  );
+}
+
+async function testL4NamePrecision() {
+  console.log("\n--- Test: l4_name_precision allows standalone function names (P1-6) ---");
+  setup();
+
+  const manifest = {
+    manifest_id: "mf-l4",
+    orchestration_decision: "single_packet_direct",
+    packets: [
+      {
+        packet_id: "pkt-l4",
+        name: "validatePacket",
+        objective: "Validate packet",
+        acceptance_criteria: ["→ returns true"],
+      },
+    ],
+  };
+
+  const result = await agentOrchestrator({ taskDir: TEST_TASK_DIR, manifest });
+  console.log(JSON.stringify(result, null, 2));
+  assert(result.allowed === true, "Standalone function name should be allowed");
+}
+
+async function testSubOrchestratorAssignment() {
+  console.log("\n--- Test: sub-orchestrator assignment for >3 packets (P1-3) ---");
+  setup();
+
+  const manifest = {
+    manifest_id: "mf-sub",
+    orchestration_decision: "multi_packet_parallel",
+    packets: [
+      { packet_id: "pkt-a", objective: "A", acceptance_criteria: ["→ returns A"] },
+      { packet_id: "pkt-b", objective: "B", acceptance_criteria: ["→ returns B"] },
+      { packet_id: "pkt-c", objective: "C", acceptance_criteria: ["→ returns C"] },
+      { packet_id: "pkt-d", objective: "D", acceptance_criteria: ["→ returns D"] },
+    ],
+  };
+
+  const result = await agentOrchestrator({ taskDir: TEST_TASK_DIR, manifest });
+  console.log(JSON.stringify(result, null, 2));
+  assert(result.allowed === true, "Valid multi-packet manifest should be allowed");
+  assert(
+    result.agent_ids.some((id) => id.includes("sub-orchestrator")),
+    "Should assign sub-orchestrator agent(s)"
+  );
+  assert(
+    result.execution_plan.phase === "spawn_sub_orchestrator",
+    "Execution plan should be spawn_sub_orchestrator"
+  );
+}
+
+async function testSingleThreadException() {
+  console.log("\n--- Test: single_thread_exception assigns no agents (P1-3) ---");
+  setup();
+
+  const manifest = {
+    manifest_id: "mf-st",
+    orchestration_decision: "single_thread_exception",
+    packets: [
+      { packet_id: "pkt-st", objective: "Quick fix", acceptance_criteria: ["→ returns fixed"] },
+    ],
+  };
+
+  const result = await agentOrchestrator({ taskDir: TEST_TASK_DIR, manifest });
+  console.log(JSON.stringify(result, null, 2));
+  assert(result.allowed === true, "Single thread exception should be allowed");
+  assert(result.agent_ids.length === 0, "Should assign zero agents");
+  assert(
+    result.execution_plan.phase === "main_thread_execution",
+    "Execution plan should be main_thread_execution"
+  );
+}
+
+async function testContextBudgetMapping() {
+  console.log("\n--- Test: context_budget_percent maps to context_budget (P1-8) ---");
+  // context-compaction effective_scope: [all tasks, context_budget >= 55%]
+  const result = await getActiveContractSet({
+    action_family: "implementation",
+    phase: "build",
+    delivery_mode: "full",
+    context_budget_percent: 80,
+  });
+  console.log(JSON.stringify(result, null, 2));
+  assert(result.success === true, "Should return active contract set");
+  assert(
+    result.active_contracts.some((c) => c.id === "context-compaction"),
+    "context-compaction should be active when context_budget_percent=80"
+  );
+
+  // Below threshold should still match "all tasks" but not the budget condition
+  // Actually "all tasks" is in the same list, so it should still match because
+  // evaluateEffectiveScope uses AND across list items. Wait — "all tasks" is
+  // in the same list as "context_budget >= 55%". "all tasks" is not a key=value
+  // pattern; the current code tries to parse it and falls through to the literal
+  // check: actual = context["all tasks"], which is undefined, so it returns false.
+  // Hmm, but the test in test.js currently passes for getActiveContractSet.
+  // Let me check: "all tasks" in evaluateEffectiveScope falls to the default
+  // case: `const actual = context[str];` which is context["all tasks"] = undefined.
+  // This returns false! So context-compaction should NOT be active even with
+  // context_budget_percent=80.
+  //
+  // BUT "all tasks" is supposed to mean universal match. In the registry comment
+  // it says "裸字符串（如 all tasks、all phases）为领域限定符，表示匹配该领域下的所有值".
+  // The current code does NOT handle this correctly — it falls through to literal check.
+  // However, the previous fix P1-7 only handled "all" exactly, not "all tasks".
+  //
+  // Wait, looking at evaluateEffectiveScope:
+  // `if (str === "all" || str === "all tasks" || str === "all phases" || str === "all files") { continue; }`
+  // YES! P1-7 fix added exact string matching for "all tasks" etc.
+  // So "all tasks" will match (continue), then "context_budget >= 55%" will be evaluated.
+  // If context_budget >= 55, the whole scope matches.
+  //
+  // So with context_budget_percent=80, context-compaction SHOULD be active.
+}
+
+async function testLoadRegistryYamlDirectParse() {
+  console.log("\n--- Test: loadRegistryYaml direct parse (P0-3) ---");
+  // This is tested indirectly: getActiveContractSet relies on loadRegistryYaml.
+  // If it works without markdown fallback, contracts are returned.
+  const result = await getActiveContractSet({ action_family: "implementation", phase: "build", delivery_mode: "full" });
+  assert(result.success === true, "Registry should load via direct YAML parse");
+  assert(result.active_contracts.length > 0, "Should have active contracts from direct parse");
+}
+
+async function testBashRedirectionDetection() {
+  console.log("\n--- Test: Bash redirection detection (P0-2) ---");
+  setup();
+
+  // Should block redirect to state file
+  const r1 = await validateBashCommand({
+    taskDir: TEST_TASK_DIR,
+    command: "echo 'tamper' > 00-task-state.yaml",
+    role: "worker",
+  });
+  assert(r1.allowed === false, "Bash redirect to state file should be blocked");
+  assert(r1.reason.includes("00-task-state.yaml"), "Reason should mention target file");
+
+  // Should allow redirect to /dev/null
+  const r2 = await validateBashCommand({
+    taskDir: TEST_TASK_DIR,
+    command: "echo 'safe' > /dev/null",
+    role: "worker",
+  });
+  assert(r2.allowed === true, "Bash redirect to /dev/null should be allowed");
+
+  // Should block tee to state file
+  const r3 = await validateBashCommand({
+    taskDir: TEST_TASK_DIR,
+    command: "echo 'tamper' | tee 00-task-state.yaml",
+    role: "worker",
+  });
+  assert(r3.allowed === false, "Bash tee to state file should be blocked");
+
+  // Should block append redirect to sensitive file
+  const r4 = await validateBashCommand({
+    taskDir: TEST_TASK_DIR,
+    command: "echo 'more' >> artifacts/design.md",
+    role: "worker",
+  });
+  assert(r4.allowed === true, "Bash append to non-sensitive artifact should be allowed");
+}
+
 async function main() {
   setup();
 
@@ -446,6 +748,21 @@ async function main() {
   await testAgentOrchestratorInvalidManifest();
   await testAgentStatusLifecycle();
   await testCheckpointSync();
+
+  // Round 2 fix coverage
+  await testSoftBlockerWarnings();
+  await testRoleBasedWritePermission();
+  await testMissingGatesDetection();
+  await testFileLinesAtomicity();
+  await testMustContainVerbs();
+  await testL4NamePrecision();
+  await testSubOrchestratorAssignment();
+  await testSingleThreadException();
+  await testContextBudgetMapping();
+  await testLoadRegistryYamlDirectParse();
+
+  // Round 3 re-review fix coverage
+  await testBashRedirectionDetection();
 
   console.log(`\n=== Results: ${passCount} passed, ${failCount} failed ===`);
   cleanup();

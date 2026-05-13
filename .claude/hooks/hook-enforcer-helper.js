@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // hook-enforcer-helper.js — Bridge between PreToolUse Hook and constraint-enforcer logic
-// Reads JSON from stdin: { filePath, operation, newContent }
+// Reads JSON from stdin: { filePath, operation, newContent, role }
 // Writes JSON to stdout: { allowed, reason }
 
 import { validateWritePermission } from "../mcp-servers/constraint-enforcer/enforcer.js";
