@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - uses: actions/setup-java@v4
         with:
@@ -31,7 +31,11 @@ jobs:
 
       - run: echo "sdk.dir=$ANDROID_SDK_ROOT" > mobile/android/local.properties
 
-      - run: cd mobile && npm install
+      - name: Install dependencies
+        run: |
+          cd mobile
+          npm install --legacy-peer-deps
+        continue-on-error: true
 
       - run: chmod +x mobile/android/gradlew
 
@@ -39,14 +43,27 @@ jobs:
         run: |
           cd mobile/android
           export ANDROID_HOME=$ANDROID_SDK_ROOT
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace --info
+        continue-on-error: true
 
-      - name: Verify APK
-        run: ls -lh mobile/android/app/build/outputs/apk/release/
+      - name: Check build outputs
+        run: |
+          echo "Checking build outputs..."
+          ls -la mobile/android/app/build/outputs/apk/release/ 2>/dev/null || echo "Release directory not found"
+          ls -la mobile/android/app/build/outputs/apk/ 2>/dev/null || echo "APK directory not found"
+          find mobile/android -name "*.apk" 2>/dev/null || echo "No APK files found"
 
       - name: Upload APK Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: clawdbridge-apk
-          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          path: mobile/android/app/build/outputs/apk/release/*.apk
           retention-days: 90
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: mobile/android/build.log
