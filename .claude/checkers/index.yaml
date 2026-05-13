@@ -156,13 +156,13 @@ checkers:
       minimum_requirement: "覆盖率 ≥95%，无 orphan STEP 和 orphan packet"
 
   packet-size-check:
-    script: packet-size-check.sh
+    script: packet-size-check.js
     mode: automated
     scope: code files, dev plan
     gate_binding: professional
     contracts: [execution-traceability, work-packet-governance]
     stage: [stage6]
-    description: "每个包有效代码 ≤50 行或声明 oversized_justified"
+    description: "P2-2 fix: 按 packet_id 聚合所有文件的有效代码行数，检查 ≤50 行或声明 oversized_justified"
     output_schema: "checker-result-v1"
     structured_output_required: true
     implementation_status: implemented
