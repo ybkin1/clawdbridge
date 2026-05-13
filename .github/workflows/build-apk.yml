@@ -40,48 +40,32 @@ jobs:
       - run: chmod +x mobile/android/gradlew
 
       - name: Build APK
-        id: build
         run: |
           cd mobile/android
           export ANDROID_HOME=$ANDROID_SDK_ROOT
-          ./gradlew assembleRelease --no-daemon --stacktrace --info
+          ./gradlew assembleRelease --no-daemon --stacktrace
         continue-on-error: true
 
-      - name: Check build outputs
-        id: check
+      - name: Find APK files
         run: |
-          echo "Checking build outputs..."
+          echo "Searching for APK files..."
+          find mobile/android -name "*.apk" -type f 2>/dev/null | head -20
+          echo "---"
           ls -la mobile/android/app/build/outputs/apk/release/ 2>/dev/null || echo "Release directory not found"
-          ls -la mobile/android/app/build/outputs/apk/ 2>/dev/null || echo "APK directory not found"
-          find mobile/android -name "*.apk" 2>/dev/null || echo "No APK files found"
-          # Check if APK exists and set output
-          if [ -f "mobile/android/app/build/outputs/apk/release/app-release.apk" ]; then
-            echo "apk_found=true" >> $GITHUB_OUTPUT
-            echo "APK found!"
-          else
-            echo "apk_found=false" >> $GITHUB_OUTPUT
-            echo "APK not found"
-          fi
 
       - name: Upload APK Artifact
-        if: steps.check.outputs.apk_found == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: clawdbridge-apk
-          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          path: |
+            mobile/android/app/build/outputs/apk/release/*.apk
+            mobile/android/app/build/outputs/apk/debug/*.apk
+            mobile/android/**/*.apk
           retention-days: 90
-
-      - name: Upload all APKs if found
-        if: steps.check.outputs.apk_found == 'false'
-        uses: actions/upload-artifact@v4
-        with:
-          name: all-apks
-          path: mobile/android/**/*.apk
-          retention-days: 90
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
       - name: Upload build logs
-        if: steps.build.outcome == 'failure'
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: build-logs
