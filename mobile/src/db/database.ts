@@ -13,7 +13,7 @@ export function getDB(): DB {
   return dbInstance;
 }
 
-export async function initDB(): Promise<void> {
+export async function initDatabase(): Promise<void> {
   dbInstance = createMockDB();
   await dbInstance.exec(`CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
