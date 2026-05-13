@@ -1,0 +1,19 @@
+review_id: rb-20260513-002
+target: "规范架构 v2.0 独立深度评审（Round 2）"
+scope:
+  - "规范架构：八层分离模型完整性、层间边界清晰度、部署可行性"
+  - "规范要求：27 个契约一致性、配置层与规范层同步、规则自洽性"
+  - "实际应用场景：真实项目落地难度、学习曲线、维护成本、开发者体验"
+  - "约束能力：MCP 自动化边界、人工不可豁免项、Hook 互补完整性"
+  - "冲突/不足：契约间矛盾、配置漂移、版本不一致、边界情况遗漏"
+  - "上下文资源：Agent 并发 token 开销、检查器运行成本、配置加载性能"
+reviewers:
+  - id: architect-reviewer
+    focus: "八层架构完整性、层间耦合、部署映射、目录结构合理性"
+  - id: code-reviewer
+    focus: "MCP 约束能力、性能/资源开销、代码可维护性、扩展性"
+  - id: contract-reviewer
+    focus: "契约一致性、规范要求覆盖、实际应用场景、冲突检测"
+  - id: auditor-reviewer
+    focus: "规则自洽性、边界情况、综合审计、Fail-Closed 完整性"
+deliverable: "review-bundles/rb-20260513-002/reviews/*.md + receipt-*.yaml"

@@ -1,0 +1,219 @@
+review_id: rb-20260513-002
+target: "规范架构 v2.0 独立深度评审（Round 2）"
+date_conducted: "2026-05-13"
+verdict: "Conditional Pass"
+
+reviewers:
+  - id: architect-reviewer
+    focus: "八层架构完整性、层间耦合、部署映射、目录结构合理性"
+    verdict: "Conditional Pass"
+    report_path: "reviews/architecture-separation-round2.md"
+    critical: 3
+    high: 4
+    medium: 5
+    low: 4
+    informational: 4
+
+  - id: code-reviewer
+    focus: "MCP 约束能力、性能/资源开销、代码可维护性、扩展性"
+    verdict: "Conditional Pass"
+    report_path: "reviews/constraints-performance-round2.md"
+    critical: 1
+    high: 3
+    medium: 4
+    low: 4
+    informational: 3
+
+  - id: contract-reviewer
+    focus: "契约一致性、规范要求覆盖、实际应用场景、冲突检测"
+    verdict: "Conditional Pass"
+    report_path: "reviews/contracts-applicability-round2.md"
+    critical: 3
+    high: 5
+    medium: 5
+    low: 4
+    informational: 3
+
+  - id: auditor-reviewer
+    focus: "规则自洽性、边界情况、综合审计、Fail-Closed 完整性"
+    verdict: "Conditional Pass"
+    report_path: "reviews/audit-edgecases-round2.md"
+    critical: 3
+    high: 4
+    medium: 5
+    low: 4
+    informational: 3
+
+metrics:
+  total_findings: 66
+  critical: 12
+  high: 16
+  medium: 20
+  low: 14
+  informational: 4
+  overlapping_findings: 14
+  unique_action_items: 28
+
+cross_cutting_themes:
+  - id: T1
+    name: "Hard-Coded Constants in L3 MCP"
+    severity: "High"
+    description: "Systematic architectural drift: operational constants, fallback sets, and orchestration parameters remain embedded in enforcer.js despite zero hard-coded rules claim."
+    affected_reviewers: [architect-reviewer, code-reviewer, auditor-reviewer]
+    findings: [architect-C1, architect-C2, architect-C3, architect-H3, architect-M1, architect-M2, architect-M3, architect-M4, audit-L1, constraints-L3]
+
+  - id: T2
+    name: "Hook / MCP Complementarity Gaps"
+    severity: "High"
+    description: "Hook is robust in current scope but incomplete. cp/mv/touch/rm bypass both layers. Bash parsing duplicated across Python and JS."
+    affected_reviewers: [architect-reviewer, code-reviewer, auditor-reviewer]
+    findings: [constraints-C1, architect-H4, architect-M5, architect-L2, constraints-L2, architect-H2]
+
+  - id: T3
+    name: "Auditor / Tamper Detection Unimplemented"
+    severity: "Critical"
+    description: "Auditor verdict read-only guarantee is social/conventional, not technical. Orchestrator can self-approve phase transitions."
+    affected_reviewers: [auditor-reviewer, contract-reviewer]
+    findings: [audit-C1, audit-C2, contract-I1]
+
+  - id: T4
+    name: "Spec-Config-Code Divergence"
+    severity: "High"
+    description: "Single source of truth violated in multiple dimensions: spec vs config count mismatches, config duplicate constants, registry dependency inconsistencies."
+    affected_reviewers: [contract-reviewer, architect-reviewer, auditor-reviewer]
+    findings: [contract-C1, contract-H5, architect-L3, audit-C3, contract-H2, contract-H4]
+
+  - id: T5
+    name: "Monolith / Performance / Scalability"
+    severity: "Medium"
+    description: "enforcer.js at 1897 lines is approaching unmaintainability. Spawn-per-checker model unsustainable at 50+."
+    affected_reviewers: [code-reviewer, architect-reviewer]
+    findings: [constraints-H1, constraints-H2, constraints-H3, architect-H1]
+
+  - id: T6
+    name: "Real-World Applicability & Coverage Gaps"
+    severity: "Medium"
+    description: "System over-engineered for small tasks, under-specified for operational scenarios (migrations, API compatibility, security)."
+    affected_reviewers: [contract-reviewer]
+    findings: [contract-M1, contract-M2, contract-C3]
+
+  - id: T7
+    name: "Value Gate / Auditor Paradox"
+    severity: "High"
+    description: "Logical contradiction: value gate requires Auditor verdict but is inherently subjective and un-auditable."
+    affected_reviewers: [contract-reviewer]
+    findings: [contract-C2]
+
+unified_priority_actions:
+  p0_security_integrity:
+    - id: P0-1
+      finding: "tamper_detected unimplemented"
+      source: "audit-C1"
+      action: "Implement receipt-based auditor verdict verification"
+    - id: P0-2
+      finding: "Orchestrator can fake auditor_verdict"
+      source: "audit-C2"
+      action: "Remove orchestrator write access to auditor_verdict; store receipts separately"
+    - id: P0-3
+      finding: "unknown_check_type_policy allows bypass"
+      source: "audit-H1"
+      action: "Change do_not_block: false in mcp-capabilities.yaml"
+    - id: P0-4
+      finding: "validateWritePermission implicit allow on missing config"
+      source: "audit-H2"
+      action: "Default to allowed: false when config missing"
+    - id: P0-5
+      finding: "Hook / MCP miss cp/mv/touch/rm"
+      source: "architect-H4"
+      action: "Extend detection to common disk-writing bash commands"
+
+  p1_architecture_maintainability:
+    - id: P1-1
+      finding: "enforcer.js monolith (1897 lines)"
+      source: "constraints-H1, architect-H1"
+      action: "Split into enforcer/ sub-modules; extract orchestration"
+    - id: P1-2
+      finding: "Hard-coded constants cluster"
+      source: "architect-C1..C3, M1..M4"
+      action: "Create config-meta.yaml with runtime_constants section"
+    - id: P1-3
+      finding: "Spawn-per-checker overhead"
+      source: "constraints-H2"
+      action: "Implement in-process JS checker runtime"
+    - id: P1-4
+      finding: "Dependency cycle detection missing"
+      source: "audit-C3"
+      action: "Add DFS topological sort in getActiveContractSetInternal"
+    - id: P1-5
+      finding: "Spec-config divergence (8 vs 10 conditions)"
+      source: "contract-C1"
+      action: "Update spec to document all 10 conditions"
+
+  p2_contract_consistency_applicability:
+    - id: P2-1
+      finding: "Value gate Auditor paradox"
+      source: "contract-C2"
+      action: "Clarify value gate exemption in review-gates-contract.md"
+    - id: P2-2
+      finding: "50-line packet size unenforceable"
+      source: "contract-C3"
+      action: "Redefine checker to operate on packet_id aggregates or change rule"
+    - id: P2-3
+      finding: "Context budget circular dependency"
+      source: "contract-H1"
+      action: "Add budget reservation protocol in cluster-orchestration.md"
+    - id: P2-4
+      finding: "cluster-orchestration provisional but depended upon"
+      source: "contract-H2"
+      action: "Promote to active or add fallback path"
+    - id: P2-5
+      finding: "12-layer to L0-L4 mapping gap"
+      source: "contract-H3"
+      action: "Add explicit mapping table"
+    - id: P2-6
+      finding: "Exception governance missing Auditor tampering rule"
+      source: "contract-H4"
+      action: "Add rule 6 to exception-governance.md §5"
+    - id: P2-7
+      finding: "Config-sync-check insufficient"
+      source: "contract-H5"
+      action: "Extend with semantic cross-validation"
+
+  p3_polish_edge_cases:
+    - id: P3-1
+      finding: "Checker timeout does not kill child"
+      source: "audit-H3"
+      action: "Call child.kill('SIGKILL') on timeout"
+    - id: P3-2
+      finding: "timestamp_freshness passes on missing file"
+      source: "audit-H4"
+      action: "Return passed: false when reference missing"
+    - id: P3-3
+      finding: "Config cache mtime granularity"
+      source: "constraints-H3"
+      action: "Add configCacheMaxAgeMs or switch to fs.watch"
+    - id: P3-4
+      finding: "Token estimator ±30% accuracy"
+      source: "constraints-M2"
+      action: "Replace with gpt-tokenizer or add safety margin"
+    - id: P3-5
+      finding: "Agent ID collision under rapid calls"
+      source: "constraints-L4"
+      action: "Append random suffix or use Date.now()"
+    - id: P3-6
+      finding: "Python3 dependency in Hook"
+      source: "constraints-L2"
+      action: "Rewrite JSON extraction in pure Bash or Node"
+    - id: P3-7
+      finding: "checkpointSync load is read-only"
+      source: "audit-M5"
+      action: "Rename to query or implement true restore"
+
+operational_constraints_until_fixed:
+  - "Do not trust auditor_verdict without manual verification (until P0-1/P0-2 fixed)"
+  - "Do not use cp, mv, touch, rm in Bash tools without manual review (until P0-5 fixed)"
+  - "Do not modify mechanical-conditions.yaml check_types without updating mcp-capabilities.yaml (until P1-2 fixed)"
+  - "Limit checker count to <30 to avoid spawn overhead (until P1-3 fixed)"
+
+synthesis_report_path: "fan-in-synthesis.md"
+next_step: "Address all P0 items, then re-run focused audit round"
