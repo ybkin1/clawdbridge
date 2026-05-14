@@ -142,6 +142,65 @@ function generateAgentId(role, packetId) {
   return `ag-${role}-${packetId}-${ts}-${rand}`;
 }
 
+// ---------------------------------------------------------------------------
+// Review agent sizing — implements cluster-orchestration.md §6.4
+// ---------------------------------------------------------------------------
+
+function calculateReviewAgentCount(manifest, reviewSizingConfig) {
+  if (!reviewSizingConfig) return null;
+  const rc = manifest.review_context || {};
+
+  // Gather inputs
+  const dimensions = Array.isArray(rc.dimensions) ? rc.dimensions.length : 0;
+  const subsystems = Array.isArray(rc.subsystems) ? rc.subsystems.length : 0;
+  const files = typeof rc.files === "number" ? rc.files : 0;
+  const lines = typeof rc.lines === "number" ? rc.lines : 0;
+
+  const D = reviewSizingConfig.dimension_multiplier ?? 1.0;
+  const S = reviewSizingConfig.subsystem_multiplier ?? 1.0;
+  const F = reviewSizingConfig.files_per_agent ?? 30;
+  const L = reviewSizingConfig.lines_per_agent ?? 500;
+  const MIN = reviewSizingConfig.min_agents ?? 2;
+  const MAX = reviewSizingConfig.max_agents ?? 10;
+
+  // Skip calculation if no review context provided
+  if (dimensions === 0 && subsystems === 0 && files === 0 && lines === 0) {
+    return null;
+  }
+
+  const raw = dimensions * D + subsystems * S + (F > 0 ? files / F : 0) + (L > 0 ? lines / L : 0);
+  const recommended = Math.max(MIN, Math.min(MAX, Math.ceil(raw)));
+
+  return {
+    recommended_agent_count: recommended,
+    formula_inputs: {
+      dimensions,
+      subsystems,
+      files,
+      lines,
+    },
+    formula_params: { D, S, F, L, MIN, MAX },
+    raw_value: raw,
+    rationale: `dimensions(${dimensions})*${D} + subsystems(${subsystems})*${S} + files(${files})/${F} + lines(${lines})/${L} = ${raw.toFixed(2)} → clamp(${MIN}, ${MAX}) = ${recommended}`,
+    // Per-dimension allocation guidance
+    dimension_allocation:
+      dimensions > 0
+        ? {
+            max_dimensions_per_agent: 2,
+            suggested_lanes: rc.dimensions || [],
+          }
+        : null,
+    // Subsystem boundary guidance
+    subsystem_allocation:
+      subsystems > 0
+        ? {
+            min_agents_for_subsystems: subsystems,
+            suggested_subsystem_lanes: rc.subsystems || [],
+          }
+        : null,
+  };
+}
+
 export async function agentOrchestrator(args = {}) {
   const taskDir = resolveTaskDir(args.taskDir);
   const manifest = args.manifest || {};
@@ -242,6 +301,10 @@ export async function agentOrchestrator(args = {}) {
   const agentsDir = path.join(taskDir, "agents");
   if (!fs.existsSync(agentsDir)) fs.mkdirSync(agentsDir, { recursive: true });
 
+  // Compute review agent sizing recommendation when review context is present
+  const reviewSizingConfig = getMeta("agent_orchestrator.review_sizing", null);
+  const reviewSizingRecommendation = calculateReviewAgentCount(manifest, reviewSizingConfig);
+
   const planFile = path.join(agentsDir, "orchestrator-plan.yaml");
   const planDoc = {
     plan_id: `plan-${Date.now()}`,
@@ -255,12 +318,13 @@ export async function agentOrchestrator(args = {}) {
       assigned_agent_id: packetAgentMap.get(p.packet_id) || null,
     })),
     status: "approved",
+    review_sizing_recommendation: reviewSizingRecommendation,
   };
   const planTempFile = `${planFile}.tmp`;
   fs.writeFileSync(planTempFile, yaml.dump(planDoc));
   fs.renameSync(planTempFile, planFile);
 
-  return {
+  const result = {
     allowed: true,
     agent_ids: agentIds,
     execution_plan: {
@@ -272,6 +336,12 @@ export async function agentOrchestrator(args = {}) {
     plan_file: planFile,
     timestamp: new Date().toISOString(),
   };
+
+  if (reviewSizingRecommendation) {
+    result.review_sizing_recommendation = reviewSizingRecommendation;
+  }
+
+  return result;
 }
 
 export async function agentStatus(args = {}) {
