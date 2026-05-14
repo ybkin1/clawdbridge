@@ -178,9 +178,88 @@ substantive execution 至少拆成以下活动族（来自 Codex execution-orche
 | Stage 4 方案详设 | `analysis` + `authoring` | 需要模块级 + 组件级 + 单元级设计 → `recommended_multi_agent`（可按模块分 lane） |
 | Stage 5 开发计划 | `analysis` + `authoring` | 需要排期 + Agent 矩阵 + 里程碑 → 通常 `single_packet_direct` |
 | Stage 7 测试 | `implementation` + `verification` + `authoring` | 需要编写测试 + 执行测试 + 产出报告 → `mandatory_multi_agent`（写测试与执行测试并行） |
-| Stage 评审 / review action_family | `review` | 独立评审需要多维度覆盖（架构/安全/正确性/价值）→ `mandatory_multi_agent`（按评审维度分 lane：Standard=2 lanes, Complex=3-4 lanes） |
+| Stage 评审 / review action_family | `review` | 独立评审需要多维度覆盖（架构/安全/正确性/价值）→ `mandatory_multi_agent`（按评审维度分 lane，**agent 数由 §6.4 动态公式计算，不再固定**） |
 
 **规则**：build 外的活动族编排不要求像 build 一样做 work packet 级拆包，但仍需遵守 delegation plan 最小结构（§7）和 Fan-Out/Fan-In 工作流（§8）。
+
+## 6.4 评审 Agent 数动态计算模型（新增）
+
+> **背景**：旧版规范使用静态 agent 数（Standard=2, Complex=3-4），无法反映实际代码规模。clawdbridge 项目实测 525 个 TS/JS 文件、5 个子系统，3 个 agent 的评审只能是表面扫描。本模型按工作量动态计算，取代固定数字。
+
+### 6.4.1 核心公式
+
+```
+review_agents = clamp(
+  min = 2,
+  max = 10,
+  value = dimensions × D + subsystems × S + files / F + lines / L
+)
+```
+
+| 变量 | 含义 | 默认值 | 来源 |
+|------|------|--------|------|
+| `dimensions` | 评审维度数（见§6.4.2） | 按场景定 | 契约定义 |
+| `subsystems` | 独立子系统数 | 按代码库扫描 | `find` / `glob` |
+| `files` | 变更/待评审代码文件数 | 按 `git diff --stat` 或 `find` | 工具输出 |
+| `lines` | 有效代码行数（不含注释/空行/import） | 按 `cloc` 或 checker | 工具输出 |
+| `D` | 维度系数 | 1.0 | `config-meta.yaml` `dimension_multiplier` |
+| `S` | 子系统系数 | 1.0 | `config-meta.yaml` `subsystem_multiplier` |
+| `F` | 每 agent 承载文件数 | 30 | `config-meta.yaml` `files_per_agent` |
+| `L` | 每 agent 承载代码行数 | 500 | `config-meta.yaml` `lines_per_agent` |
+
+### 6.4.2 评审维度定义
+
+| 维度 | 职责 | 是否必须 |
+|------|------|----------|
+| `architecture` | 模块耦合、循环依赖、接口一致性、分层合规 | 是 |
+| `security` | 输入校验、注入防护、鉴权、路径遍历、敏感数据 | 是 |
+| `correctness` | 业务逻辑、状态机、并发安全、边界条件、算法正确性 | 是 |
+| `performance` | 内存泄漏、N+1 查询、大 O 复杂度、阻塞 IO、资源泄漏 | 推荐 |
+| `observability` | 异常覆盖、日志规范、降级策略、可恢复性 | 推荐 |
+| `maintainability` | 命名规范、重复代码、测试覆盖、文档对齐、类型安全 | 推荐 |
+
+**规则**：
+- `action_family=review` + `delivery_mode=full` → 至少覆盖 3 个 must 维度
+- `action_family=review` + 代码库文件数 > 200 → 必须覆盖全部 6 个维度
+- 单个 agent **最多同时承担 2 个维度**，禁止"全维度大包干"
+
+### 6.4.3 子系统边界拆分规则
+
+当待评审代码涉及 ≥2 个独立子系统（通过顶级目录或 `package.json`/`go.mod` 判断）时：
+
+1. **每个子系统至少分配 1 个独立 agent**
+2. 禁止跨子系统的"大杂烩"评审包
+3. 子系统 agent 专注该子系统的 `correctness` + `maintainability`
+4. 全局维度（`architecture`, `security`）由独立 agent 跨子系统扫描
+
+**判定方法**：
+- 存在多个 `package.json` / `go.mod` / `Cargo.toml` / `pyproject.toml`
+- 或顶级目录结构明显分离（如 `mobile/`, `server/`, `desktop/`）
+- 或用户明确声明多模块架构
+
+### 6.4.4 计算示例（clawdbridge）
+
+| 输入 | 值 | 计算项 |
+|------|-----|--------|
+| 评审维度 | architecture + security + correctness + performance + observability + maintainability = **6** | 6 × 1.0 = 6 |
+| 子系统 | mobile / desktop / MCP server / contracts / b6-impl = **5** | 5 × 1.0 = 5 |
+| 文件数 | 525 个 TS/JS 文件 | 525 / 30 = 17.5 |
+| 代码行数 | 假设 ~25,000 有效行 | 25,000 / 500 = 50 |
+| 原始值 | — | 6 + 5 + 17.5 + 50 = **78.5** |
+| clamp(2, 10, 78.5) | — | **10** |
+
+**结论**：clawdbridge 的代码评审需要 **10 个 agent**（触及上限），按以下方式分配：
+- 维度 agent（6 个）：每个维度 1 个 agent，其中 `correctness` 因文件量多可拆为 2 个
+- 子系统 agent（4 个）：mobile、desktop、MCP server、contracts 各 1 个
+- **注意**：实际执行时因上限 10，需做二级 fan-in（先维度聚合，再子系统聚合）
+
+### 6.4.5 与上下文预算的协调
+
+当公式计算出的 agent 数导致上下文预算超过 70% 时：
+
+1. **优先降级而非减 agent**：先触发 `context-compaction`，压缩后再 fan-out
+2. **若压缩后仍超过 85%**：启用 `single_thread_exception`，理由代码 `context_budget_insufficient_for_parallel_delegation`
+3. **绝不为了省预算而削减评审维度**：宁可分两轮评审（第一轮 5 个 agent，第二轮 5 个 agent），也不减少单轮覆盖度
 
 ## 7. Delegation Plan 最小结构
 

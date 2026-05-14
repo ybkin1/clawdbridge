@@ -52,10 +52,21 @@ bash_validation:
 # ---------------------------------------------------------------------------
 agent_orchestrator:
   worker_group_size: 3          # packets per sub-orchestrator when >3 packets
+  max_workers_per_review: 10    # max total workers for review scenarios (P2-2 follow-up)
+  review_dimension_split: true  # enforce dimension-based review splitting
   valid_decisions:
     - multi_packet_parallel
     - single_packet_direct
     - single_thread_exception
+
+  # Review sizing formula parameters (source: cluster-orchestration.md §6.3)
+  review_sizing:
+    min_agents: 2
+    max_agents: 10
+    files_per_agent: 30
+    lines_per_agent: 500
+    dimension_multiplier: 1.0
+    subsystem_multiplier: 1.0
 
 # ---------------------------------------------------------------------------
 # Token Estimation
